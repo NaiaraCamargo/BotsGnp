@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ambientes virtuais
+venv/
+.env
+.env.*
+
+# IDEs
+.idea/
+.vscode/
+.vs/
+
+# Logs
+logs/
+*.log
+
+# Build
+build/
+dist/
+
+# Programas externos
+PROGRAMAS/
+
+# Documentação gerada automaticamente (se aplicável)
+docs/
+
+# Arquivos Excel na raiz
+/*.xlsx

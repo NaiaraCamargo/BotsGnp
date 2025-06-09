@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <style>
+
+        :root{
+            --corFundo: rgb(230, 240, 235);
+        }
+
+        *{
+            margin: 0px;
+            padding: 0px;
+        }
+
+        body{
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            overflow: hidden;
+        }
+
+
+        /* -------- ESTRUTURA*/
+
+        #header{
+            position: relative;
+            width: 100%;
+            min-height: 50px;
+            background-color: rgb(145, 173, 148);
+            box-shadow: 0 8px 10px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-flow: row wrap;
+            justify-content: space-between;
+        }
+
+        #body{
+            padding: 25px;
+            padding-top: 15px;
+            margin: auto;
+            top: 0;
+            left: 0;
+            overflow: auto;
+            height: calc(100vh - 65px);
+        }
+
+        #botoes_menu{
+            display: flex;
+            align-items: end;
+        }
+
+        #botoes_acao, #botoes_controle{
+            display: flex;
+            align-items: center;
+        }
+
+
+        /* -------- PLATAFORMAS*/
+
+        .plataforma{
+            margin-top: 15px;
+            box-shadow: rgba(0, 0, 0, 0.2) 0px 4px 6px;
+            border-top: 1px rgba(164, 164, 164, 0.816) solid;
+            border-left: 1px rgba(164, 164, 164, 0.816) solid;
+            border-right: 1px rgba(164, 164, 164, 0.816) solid;
+        }
+
+        .plataforma_header{
+            background-color: rgb(145, 173, 148);
+            border-bottom: 1px rgba(164, 164, 164, 0.816) solid;
+            min-height: 25px;
+            padding: 2px;
+            display: flex;
+            flex-flow: row wrap;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .plataforma_pages{
+            display: none;
+            margin: auto;
+            background-color: rgb(240, 245, 240);
+        }
+
+        .plataforma_pages.open{
+            display: block;
+        }
+
+        .item_plataforma_page{
+            border-bottom: 2px rgba(164, 164, 164, 0.816) solid;
+            padding: 3px;
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        .item_plataforma_page > *{
+            height: 100%;
+            flex: 1 1 auto;
+            min-width: 0;
+            margin: 2px;
+        }
+
+        .id_page{
+            min-width: 10%;
+        }
+
+        .url_page{
+            min-width: 58%;
+        }
+
+        .instrucao_page{
+            min-width: 30%;
+        }
+
+        .id_page_editar{
+            max-width: 10%;
+        }
+
+        .instrucao_page_editar{
+            display: inline-flex;
+            margin-left: 10px;
+            max-width: 45px;
+        }
+
+        .inpu_ativar{
+            margin-right: 10px;
+        }
+
+        .botaoMenu{
+            margin-right: 10px;
+            border-top-right-radius: 5px;
+            border-top-left-radius: 5px;
+        }
+
+        .botaoMenu.ativo{
+            background-color: rgb(80, 139, 68);
+        }
+
+        .botaoMenu:hover{
+            background-color: rgb(112, 164, 102);
+        }
+
+        .botaoAcao{
+            width: max-content;
+            height: 20px;
+            padding: 5px;
+            margin: 5px;
+        }
+
+
+        /* -------- INSTRUCOES*/
+
+        #main_editor_instrucao{
+            height: max-content;
+            overflow-y: auto;
+        }
+
+        #botaoSalvar{
+            background-color: rgb(47, 215, 47);
+            border: solid 2px green;
+        }
+
+        #botaoCancelar{
+            background-color: rgb(220, 54, 54);
+            border: solid 2px rgb(158, 30, 30);
+        }
+
+        #botaoTestar{
+            background-color: rgb(54, 143, 220);
+            border: solid 2px rgb(42, 110, 169);
+        }
+
+        #botaoPararTeste{
+            
+        }
+
+        .input_texto{
+            margin-left: 10px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            display: block;
+            width: max-content;
+            overflow: hidden;
+            min-height: 20px;
+            line-height: 20px;
+            border: 2px solid #ccc;
+            white-space: nowrap;
+        }
+
+        #area_retorno_crawler{
+            min-width: 100px;
+            min-height: 100px;
+        }
+
+
+        /* -------- MODAIS*/
+
+        .container_modal_editar{
+            position: fixed;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(148, 148, 148, 0.7);
+            display: none;
+            top: 0;
+            left: 0;
+        }
+
+        .modal_editar{
+            width: 60%;
+            position: relative;
+            top: 30px;
+            margin: auto;
+            left: 0;
+            right: 0;
+        }
+
+
+        /* -------- USUARIOS*/
+
+
+        /* -------- OUTROS*/
+
+        input{
+            accent-color: green;
+        }
+        
+        .svg-sm{ width: 30px; height: 30px; }
+        .svg-sm2{ width: 25px; height: 25px; }
+        .svg-smm{ width: 20px; height: 20px; }
+
+    </style>
+
+</head>
+<body>
+
+    <div id="header">
+        <div id="botoes_acao" style="display: none;">
+            <div class="botaoAcao" id="botaoCancelar" onclick="cancelarAlteracaoInstrucao()">Cancelar</div>
+            <div class="botaoAcao" id="botaoSalvar" onclick="gravarAlteracaoInstrucao()">Salvar</div>
+            <div class="botaoAcao" id="botaoTestar" onclick="testarAlteracaoInstrucao()">Testar</div>
+            <div class="" id="botaoPararTeste" style="display: none;" onclick="pararTeste()"><svg class="svg-sm" title="Parar Debug" width="512" height="512" viewBox="0 0 512 512"><path d="M256,48C141.31,48,48,141.31,48,256s93.31,208,208,208,208-93.31,208-208S370.69,48,256,48Zm80,262.4A25.62,25.62,0,0,1,310.4,336H201.6A25.62,25.62,0,0,1,176,310.4V201.6A25.62,25.62,0,0,1,201.6,176H310.4A25.62,25.62,0,0,1,336,201.6Z"/></svg></div>
+        </div>
+        <div id="botoes_controle">
+            <input id="input_pesquisa_plataformas" onkeyup="procurarPlataformas(this.value);">
+            <select id="input_pesquisa_instrucoes" style="display: none;" onclick="this.setAttribute('valorantigo', this.value);" onchange="alterarInstrucao(this)"></select>
+            <input id="input_pesquisa_usuarios" style="display: none;">
+        </div>
+        <div id="botoes_menu">
+            <div class="botaoMenu" id="add_item" onclick="abrirModalAdicionarItem()" title="Adicionar Plataforma"><svg viewBox="0 0 512 512" class="svg-sm"><path d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192 192-86 192-192z" fill="none" stroke="green" stroke-width="32"/><path fill="none" stroke="green" stroke-linecap="round" stroke-width="32" d="M256 176v160M336 256H176"/></svg></div>
+            <div class="botaoMenu ativo" id="botao_main_plataformas" onclick="alterarFuncao('main_plataformas')"><svg class="svg-sm" title="Plataformas" viewBox="0 0 512 512"><path d="M80,212V448a16,16,0,0,0,16,16h96V328a24,24,0,0,1,24-24h80a24,24,0,0,1,24,24V464h96a16,16,0,0,0,16-16V212" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/><path d="M480,256,266.89,52c-5-5.28-16.69-5.34-21.78,0L32,256" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/><polyline points="400 179 400 64 352 64 352 133" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/></svg></div>
+            <div class="botaoMenu" id="botao_main_editor_instrucao" onclick="alterarFuncao('main_editor_instrucao')"><svg class="svg-sm" title="Editor de Instruções" viewBox="0 0 512 512"><rect x="96" y="48" width="320" height="416" rx="48" ry="48" style="fill:none;stroke:#000;stroke-linejoin:round;stroke-width:32px"/><line x1="176" y1="128" x2="336" y2="128" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/><line x1="176" y1="208" x2="336" y2="208" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/><line x1="176" y1="288" x2="256" y2="288" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/></svg></div>
+            <div class="botaoMenu" id="botao_main_usuarios" onclick="alterarFuncao('main_usuarios')"><svg class="svg-sm" title="Editor de Instruções" viewBox="0 0 512 512"><path d="M344,144c-3.92,52.87-44,96-88,96s-84.15-43.12-88-96c-4-55,35-96,88-96S348,90,344,144Z" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:32px"/><path d="M256,304c-87,0-175.3,48-191.64,138.6C62.39,453.52,68.57,464,80,464H432c11.44,0,17.62-10.48,15.65-21.4C431.3,352,343,304,256,304Z" style="fill:none;stroke:#000;stroke-miterlimit:10;stroke-width:32px"/></svg></div>
+        </div>
+    </div>
+
+    <div id="body">
+        <div class="main" id="main_plataformas"></div>
+
+        <div class="main" id="main_editor_instrucao" style="display: none;">
+            <div id="area_editar_instrucao" class="input_texto" contenteditable spellcheck="false"></div>
+            <div id="area_retorno_crawler" class="input_texto"></div>
+        </div>
+    
+        <div class="main" id="main_usuarios" style="display: none;"></div>
+    </div>
+
+    <div id="container_modal_editar_pataforma" class="container_modal_editar" onclick="fecharModal(this)">
+        <div id="modal_editar_pataforma" id_plataforma="" class="modal_editar plataforma">
+            <div class="plataforma_header">
+                <input id="input_nome_plat">
+                <input type="checkbox" id="todasUrlsAtivas" onclick="ativarDesativarTodasUrl()">
+                <svg class="svg-sm2" onclick="salvarAlteracoes()" viewBox="0 0 512 512"><path d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192 192-86 192-192z" fill="none" stroke="green" stroke-miterlimit="10" stroke-width="32"/><path fill="none" stroke="green" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M352 176L217.6 336 160 272"/></svg>
+                <svg class="svg-sm2" onclick="adicionarUrlPlataforma()" viewBox="0 0 512 512"><path d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192 192-86 192-192z" fill="none" stroke="blue" stroke-width="32"/><path fill="none" stroke="blue" stroke-linecap="round" stroke-width="32" d="M256 176v160M336 256H176"/></svg>
+                <svg class="svg-sm2" onclick="abrirModal('pergunta', 'Realmente excluir?')" viewBox="0 0 512 512"><path d="M112 112l20 320c.95 18.49 14.4 32 32 32h184c17.67 0 30.87-13.51 32-32l20-320" fill="none" stroke="grey" stroke-linecap="round" stroke-linejoin="round" stroke-width="32"/><path stroke="grey" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M80 112h352"/><path d="M192 112V72h0a23.93 23.93 0 0124-24h80a23.93 23.93 0 0124 24h0v40M256 176v224M184 176l8 224M328 176l-8 224" fill="none" stroke="grey" stroke-linecap="round" stroke-linejoin="round" stroke-width="32"/></svg>
+            </div>
+            <div class="plataforma_pages open"></div>
+        </div>
+    </div>
+
+    <div id="modalAlerta" class="container_modal_editar" onclick="fecharModal(this)">
+        <div class="modal_editar"></div>
+    </div>
+
+    <div id="modalPergunta" class="container_modal_editar" onclick="fecharModal(this)">
+        <div class="modal_editar"></div>
+    </div>
+
+    <script>
+
+        //plataformas = {'bnc': {'id_plataforma': 3, 'urls': {'https://bnccompras.com/DirectBuy/DirectBuySearchPublic': {'id_page': 12442, 'id_plataforma_page': 13, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=6': {'id_page': 12441, 'id_plataforma_page': 12, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=4': {'id_page': 12440, 'id_plataforma_page': 11, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=3': {'id_page': 12439, 'id_plataforma_page': 10, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=1': {'id_page': 12438, 'id_plataforma_page': 9, 'instrucao': "; ShowAdvFields(); ExecutarScript\\n; document.getElementById('fkStatus').value = ''; ExecutarScript\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; ProcessSearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableProcessDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; Licitacao|//input[@id='ContractKind']; ProcurarElemento\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='Conductor']; ProcurarElemento\\n                NOME|XPATH; InicioRecebimentoProposta|//input[@id='ProposalReceivingStart']; ProcurarElemento\\n                NOME|XPATH; FimRecebimentoProposta|//input[@id='ProposalAnalysisStart']; ProcurarElemento\\n                NOME|XPATH; InicioDisputa|//input[@id='DisputeStart']; ProcurarElemento\\n                NOME|XPATH; ModoDisputa|//input[@id='ClosingKind']; ProcurarElemento               \\n                NOME|XPATH; ValorTotalProcesso|//input[@id='TotalBaseValue']; ProcurarElemento\\n                NOME|XPATH; FonePromotor|//input[@id='OrgPhone']; ProcurarElemento\\n                NOME|XPATH; EmailPromotor|//input[@id='OrgEmail']; ProcurarElemento\\n            ; ; FecharAba\\n        TAG_NAME; td; ProcurarElemento\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex3\\n            EXTRAIRTEXTO|NOME; -:|Uf; FiltrarValorIndex3\\n            NOME; Situacao; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5", 'usuarios': ['6080870714']}}}, 'bll': {'id_plataforma': 2, 'urls': {'https://bllcompras.com/DirectBuy/DirectBuySearchPublic': {'id_page': 12437, 'id_plataforma_page': 8, 'instrucao': ";\xa0document.getElementById('fkStatus').value\xa0=\xa0'';\xa0ExecutarScript\\n\\nNAME;\xa0DateStart;\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0;\xa0banco[data_inicial];\xa0DefinirValor\\nNAME;\xa0DateEnd;\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0;\xa0banco[data_final];\xa0DefinirValor\\n;\xa0DirectBuySearch()\xa0;\xa0ExecutarScript\\nScroolDown;\xa0;\xa0Loop\\nID;\xa0tableDirBuyDataBody;\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0TAG_NAME;\xa0tr;\xa0ProcurarElementosIndex\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0TAG_NAME;\xa0a;\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NovaGuia;\xa0CopiaCola;\xa0Click\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0XPATH;\xa0//textarea[@id='ProductOrService'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0Termos;\xa0;\xa0Loop\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0FILTRO|NOME|ATRIBUTO;\xa0Banco|Descricao|value;\xa0FiltrarValor\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0Licitacao|//input[@id='ContractKind'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME|XPATH;\xa0NmrProcessoAdministrativo|//input[@id='AdmNumber'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME|XPATH;\xa0Condutor|//input[@id='ConductorName'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0InicioRecebimentoProposta|//input[@id='ProposalReceivingStart'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0FimRecebimentoProposta|//input[@id='ProposalAnalysisStart'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0InicioDisputa|//input[@id='DisputeStart'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0ModoDisputa|//input[@id='ClosingKind'];\xa0ProcurarElemento\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0ValorTotalProcesso|//input[@id='TotalBaseValue'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0FonePromotor|//input[@id='OrgPhone'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME|XPATH;\xa0EmailPromotor|//input[@id='OrgEmail'];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0;\xa0;\xa0FecharAba\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0TAG_NAME;\xa0td;\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0CSS_SELECTOR;\xa0a[href];\xa0ProcurarElemento\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME;\xa0Link;\xa0FiltrarValor\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME;\xa0Orgao;\xa0FiltrarValorIndex1\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME;\xa0Numero;\xa0FiltrarValorIndex2\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME;\xa0Municipio;\xa0FiltrarValorIndex1\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--EXTRAIRTEXTO|NOME;\xa0-:|Uf;\xa0FiltrarValorIndex3\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0NOME;\xa0Situacao;\xa0FiltrarValorIndex3\\n\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0--NOME;\xa0Data;\xa0FiltrarValorIndex5\\n\\n", 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=6': {'id_page': 12436, 'id_plataforma_page': 7, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=4': {'id_page': 12435, 'id_plataforma_page': 6, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=3': {'id_page': 12434, 'id_plataforma_page': 5, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=1': {'id_page': 12433, 'id_plataforma_page': 4, 'instrucao': "; ShowAdvFields(); ExecutarScript\\n; document.getElementById('fkStatus').value = ''; ExecutarScript\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; ProcessSearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableProcessDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; Licitacao|//input[@id='ContractKind']; ProcurarElemento\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='Conductor']; ProcurarElemento\\n                NOME|XPATH; InicioRecebimentoProposta|//input[@id='ProposalReceivingStart']; ProcurarElemento\\n                NOME|XPATH; FimRecebimentoProposta|//input[@id='ProposalAnalysisStart']; ProcurarElemento\\n                NOME|XPATH; InicioDisputa|//input[@id='DisputeStart']; ProcurarElemento\\n                NOME|XPATH; ModoDisputa|//input[@id='ClosingKind']; ProcurarElemento               \\n                NOME|XPATH; ValorTotalProcesso|//input[@id='TotalBaseValue']; ProcurarElemento\\n                NOME|XPATH; FonePromotor|//input[@id='OrgPhone']; ProcurarElemento\\n                NOME|XPATH; EmailPromotor|//input[@id='OrgEmail']; ProcurarElemento\\n            ; ; FecharAba\\n        TAG_NAME; td; ProcurarElemento\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex3\\n            EXTRAIRTEXTO|NOME; -:|Uf; FiltrarValorIndex3\\n            NOME; Situacao; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5", 'usuarios': ['6080870714']}}}, 'pcp': {'id_plataforma': 1, 'urls': {'https://www.portaldecompraspublicas.com.br/processos': {'id_page': 1, 'id_plataforma_page': 1, 'instrucao': 'Termos; ; Loop\\nFILTROS; objeto=banco[palavrachave]|dataInicial=banco[ultima_data]|dataFinal|tipoData=1; AlterarUrl\\nProximaPagina; pagina; Loop\\nCLASS_NAME; lista-processos ; ProcurarElemento\\nCLASS_NAME; item ; ProcurarElementosApartirElAnterior\\nNOME|CLASS_NAME|TAG_NAME|TAG_NAME  ; Numero|main-item|h2|span   ; FiltrarValor\\nNOME|CLASS_NAME|REMOVER|TAG_NAME   ; Situacao|aside-item|TAG_NAME[svg]|p ; FiltrarValor\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Data|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Licitacao|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Orgao|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME|INNERCONTEM; Municipio|main-item|info|span|ico-cp cp-pin-mapa verde        ; FiltrarValor\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME|INNERCONTEM|EXTRAIRTEXTO; Uf|main-item|info|span|ico-cp cp-pin-mapa verde|-:        ; FiltrarValor\\nNOME|CLASS_NAME|CSS_SELECTOR       ; Link|main-item|a[href]          ; FiltrarValor\\nNOME|CLASS_NAME|TAG_NAME|FILTRO    ; Descricao|main-item|a|Banco; FiltrarValor', 'usuarios': ['6080870714']}}}};
+        //plataformas = {3: {'id_plataforma': 3, 'nome': 'bnc', 'urls': {'https://bnccompras.com/DirectBuy/DirectBuySearchPublic': {'id_page': 12442, 'ativo': 'true', 'id_plataforma_page': 12, 'instrucao': "; document.getElementById('fkStatus').value = ''; ExecutarScript\\n; document.getElementById('fkModality').value = ''; ExecutarScript\\n\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; DirectBuySearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableDirBuyDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; td; ProcurarElemento\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex1\\n            NOME; Situacao; FiltrarValorIndex3\\n            NOME; Modalidade; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5\\n            NOME; DataDisputa; FiltrarValorIndex6\\n            Buffer; ; Validacao\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='ConductorName']; ProcurarElemento\\n            ; ; FecharAba", 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=6': {'id_page': 12441, 'ativo': 'true', 'id_plataforma_page': 11, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=4': {'id_page': 12440, 'ativo': 'true', 'id_plataforma_page': 10, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=3': {'id_page': 12439, 'ativo': 'true', 'id_plataforma_page': 9, 'instrucao': 'cod_id_outra_ins_12438', 'usuarios': ['6080870714']}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=1': {'id_page': 12438, 'ativo': 'true', 'id_plataforma_page': 8, 'instrucao': "; ShowAdvFields(); ExecutarScript\\n; document.getElementById('fkStatus').value = ''; ExecutarScript\\n; document.getElementById('fkModality').value = ''; ExecutarScript\\n\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; ProcessSearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableProcessDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; td; ProcurarElemento\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex3\\n            EXTRAIRTEXTO|NOME; -:|Uf; FiltrarValorIndex3\\n            NOME; Situacao; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5\\n            NOME; DataDisputa; FiltrarValorIndex6\\n            Buffer; ; Validacao\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; Licitacao|//input[@id='ContractKind']; ProcurarElemento\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='Conductor']; ProcurarElemento\\n                NOME|XPATH; InicioRecebimentoProposta|//input[@id='ProposalReceivingStart']; ProcurarElemento\\n                NOME|XPATH; FimRecebimentoProposta|//input[@id='ProposalAnalysisStart']; ProcurarElemento\\n                NOME|XPATH; InicioDisputa|//input[@id='DisputeStart']; ProcurarElemento\\n                NOME|XPATH; ModoDisputa|//input[@id='ClosingKind']; ProcurarElemento               \\n                NOME|XPATH; ValorTotalProcesso|//input[@id='TotalBaseValue']; ProcurarElemento\\n                NOME|XPATH; FonePromotor|//input[@id='OrgPhone']; ProcurarElemento\\n                NOME|XPATH; EmailPromotor|//input[@id='OrgEmail']; ProcurarElemento\\n            ; ; FecharAba", 'usuarios': ['6080870714']}}}, 2: {'id_plataforma': 2, 'nome': 'bll', 'urls': {'https://bllcompras.com/DirectBuy/DirectBuySearchPublic': {'id_page': 12437, 'ativo': 'true', 'id_plataforma_page': 7, 'instrucao': "; document.getElementById('fkStatus').value = ''; ExecutarScript\\n; document.getElementById('fkModality').value = ''; ExecutarScript\\n\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; DirectBuySearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableDirBuyDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; td; ProcurarElemento\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex1\\n            NOME; Situacao; FiltrarValorIndex3\\n            NOME; Modalidade; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5\\n            NOME; DataDisputa; FiltrarValorIndex6\\n            Buffer; ; Validacao\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='ConductorName']; ProcurarElemento\\n            ; ; FecharAba", 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=6': {'id_page': 12436, 'ativo': 'true', 'id_plataforma_page': 6, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=4': {'id_page': 12435, 'ativo': 'true', 'id_plataforma_page': 5, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=3': {'id_page': 12434, 'ativo': 'true', 'id_plataforma_page': 4, 'instrucao': 'cod_id_outra_ins_12433', 'usuarios': ['6080870714']}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=1': {'id_page': 12433, 'ativo': 'true', 'id_plataforma_page': 3, 'instrucao': "; ShowAdvFields(); ExecutarScript\\n; document.getElementById('fkStatus').value = ''; ExecutarScript\\n; document.getElementById('fkModality').value = ''; ExecutarScript\\n\\nNAME; DateStart; ProcurarElemento\\n    ; banco[data_inicial]; DefinirValor\\nNAME; DateEnd; ProcurarElemento\\n    ; banco[data_final]; DefinirValor\\n; ProcessSearch() ; ExecutarScript\\nScroolDown; ; Loop\\nID; tableProcessDataBody; ProcurarElemento\\n    TAG_NAME; tr; ProcurarElementosIndex\\n        TAG_NAME; td; ProcurarElemento\\n            NOME; Orgao; FiltrarValorIndex1\\n            NOME; Numero; FiltrarValorIndex2\\n            NOME; Municipio; FiltrarValorIndex3\\n            EXTRAIRTEXTO|NOME; -:|Uf; FiltrarValorIndex3\\n            NOME; Situacao; FiltrarValorIndex4\\n            NOME; Data; FiltrarValorIndex5\\n            NOME; DataDisputa; FiltrarValorIndex6\\n            Buffer; ; Validacao\\n            CSS_SELECTOR; a[href]; ProcurarElemento\\n                NOME; Link; FiltrarValor\\n        TAG_NAME; a; ProcurarElemento\\n            NovaGuia; CopiaCola; Click\\n                XPATH; //textarea[@id='ProductOrService']; ProcurarElemento\\n                    Termos; ; Loop\\n                        FILTRO|NOME|ATRIBUTO; Banco|Descricao|value; FiltrarValor\\n                NOME|XPATH; Licitacao|//input[@id='ContractKind']; ProcurarElemento\\n                NOME|XPATH; NmrProcessoAdministrativo|//input[@id='AdmNumber']; ProcurarElemento\\n                NOME|XPATH; Condutor|//input[@id='Conductor']; ProcurarElemento\\n                NOME|XPATH; InicioRecebimentoProposta|//input[@id='ProposalReceivingStart']; ProcurarElemento\\n                NOME|XPATH; FimRecebimentoProposta|//input[@id='ProposalAnalysisStart']; ProcurarElemento\\n                NOME|XPATH; InicioDisputa|//input[@id='DisputeStart']; ProcurarElemento\\n                NOME|XPATH; ModoDisputa|//input[@id='ClosingKind']; ProcurarElemento               \\n                NOME|XPATH; ValorTotalProcesso|//input[@id='TotalBaseValue']; ProcurarElemento\\n                NOME|XPATH; FonePromotor|//input[@id='OrgPhone']; ProcurarElemento\\n                NOME|XPATH; EmailPromotor|//input[@id='OrgEmail']; ProcurarElemento\\n            ; ; FecharAba", 'usuarios': ['6080870714']}}}, 1: {'id_plataforma': 1, 'nome': 'pcp', 'urls': {'https://www.portaldecompraspublicas.com.br/processos': {'id_page': 1, 'ativo': 'true', 'id_plataforma_page': 1, 'instrucao': 'Termos; ; Loop\\nFILTROS; objeto=banco[palavrachave]|dataInicial=banco[ultima_data]|dataFinal|tipoData=2; AlterarUrl\\nProximaPagina; pagina; Loop\\nCLASS_NAME; lista-processos ; ProcurarElemento\\nCLASS_NAME; item ; ProcurarElementosApartirElAnterior\\nNOME|CLASS_NAME|TAG_NAME|TAG_NAME  ; Numero|main-item|h2|span   ; FiltrarValor\\nNOME|CLASS_NAME|REMOVER|TAG_NAME   ; Situacao|aside-item|TAG_NAME[svg]|p ; FiltrarValor\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Data|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Licitacao|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME; Orgao|main-item|info|span        ; FiltrarValorIndexChild\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME|INNERCONTEM; Municipio|main-item|info|span|ico-cp cp-pin-mapa verde        ; FiltrarValor\\nNOME|CLASS_NAME|CLASS_NAME|TAG_NAME|INNERCONTEM|EXTRAIRTEXTO; Uf|main-item|info|span|ico-cp cp-pin-mapa verde|-:        ; FiltrarValor\\nNOME|CLASS_NAME|CSS_SELECTOR       ; Link|main-item|a[href]          ; FiltrarValor\\nNOME|CLASS_NAME|TAG_NAME|FILTRO    ; Descricao|main-item|a|Banco; FiltrarValor', 'usuarios': ['6080870714']}}}};
+        //paginas = [{'id': 1, 'url': 'https://www.portaldecompraspublicas.com.br/processos'}, {'id': 12433, 'url': 'https://bllcompras.com/Process/ProcessSearchPublic?param1=1'}, {'id': 12434, 'url': 'https://bllcompras.com/Process/ProcessSearchPublic?param1=3'}, {'id': 12435, 'url': 'https://bllcompras.com/Process/ProcessSearchPublic?param1=4'}, {'id': 12436, 'url': 'https://bllcompras.com/Process/ProcessSearchPublic?param1=6'}, {'id': 12437, 'url': 'https://bllcompras.com/DirectBuy/DirectBuySearchPublic'}, {'id': 12438, 'url': 'https://bnccompras.com/Process/ProcessSearchPublic?param1=1'}, {'id': 12439, 'url': 'https://bnccompras.com/Process/ProcessSearchPublic?param1=3'}, {'id': 12440, 'url': 'https://bnccompras.com/Process/ProcessSearchPublic?param1=4'}, {'id': 12441, 'url': 'https://bnccompras.com/Process/ProcessSearchPublic?param1=6'}, {'id': 12442, 'url': 'https://bnccompras.com/DirectBuy/DirectBuySearchPublic'}];
+        //usuarios = {1: {'nome': 'Teste', 'id_usuario': 1, 'id_telegram': '-731831649', 'ativo': 'false', 'urls': {'https://bnccompras.com/DirectBuy/DirectBuySearchPublic': {'pagina_ativo': 'false', 'id_url': 12442, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=6': {'pagina_ativo': 'false', 'id_url': 12441, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=4': {'pagina_ativo': 'false', 'id_url': 12440, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=3': {'pagina_ativo': 'false', 'id_url': 12439, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=1': {'pagina_ativo': 'false', 'id_url': 12438, 'id_plataforma': 3}, 'https://bllcompras.com/DirectBuy/DirectBuySearchPublic': {'pagina_ativo': 'false', 'id_url': 12437, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=6': {'pagina_ativo': 'false', 'id_url': 12436, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=4': {'pagina_ativo': 'false', 'id_url': 12435, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=3': {'pagina_ativo': 'false', 'id_url': 12434, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=1': {'pagina_ativo': 'false', 'id_url': 12433, 'id_plataforma': 2}, 'https://www.portaldecompraspublicas.com.br/processos': {'pagina_ativo': 'false', 'id_url': 1, 'id_plataforma': 1}}}, 2: {'nome': 'Admin', 'id_usuario': 2, 'id_telegram': '6080870714', 'ativo': 'true', 'urls': {'https://bnccompras.com/DirectBuy/DirectBuySearchPublic': {'pagina_ativo': 'true', 'id_url': 12442, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=6': {'pagina_ativo': 'true', 'id_url': 12441, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=4': {'pagina_ativo': 'true', 'id_url': 12440, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=3': {'pagina_ativo': 'true', 'id_url': 12439, 'id_plataforma': 3}, 'https://bnccompras.com/Process/ProcessSearchPublic?param1=1': {'pagina_ativo': 'true', 'id_url': 12438, 'id_plataforma': 3}, 'https://bllcompras.com/DirectBuy/DirectBuySearchPublic': {'pagina_ativo': 'true', 'id_url': 12437, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=6': {'pagina_ativo': 'true', 'id_url': 12436, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=4': {'pagina_ativo': 'true', 'id_url': 12435, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=3': {'pagina_ativo': 'true', 'id_url': 12434, 'id_plataforma': 2}, 'https://bllcompras.com/Process/ProcessSearchPublic?param1=1': {'pagina_ativo': 'true', 'id_url': 12433, 'id_plataforma': 2}, 'https://www.portaldecompraspublicas.com.br/processos': {'pagina_ativo': 'true', 'id_url': 1, 'id_plataforma': 1}}}};
+        var instrucoes_em_edicao = {};
+
+        var segurandoCtrl = false;
+        var segurandoClick = false;
+        var instrucaoCtrlTab = "";
+        var instrucaoCtrlTabIntercalar = "";
+
+        function criarPlataforma(id_plataforma, nome, expandido){
+            var newDiv = document.createElement("div");
+            newDiv.setAttribute("class", "plataforma");
+            newDiv.innerHTML = `<div class="plataforma_header" id_plataforma="${id_plataforma}" onclick="expandir()">${nome} <svg class="botaoMenu svg-smm" viewBox="0 0 512 512" onclick="abrirModalAdicionarItem('${id_plataforma}')"><path d="M393.87 190a32.1 32.1 0 01-45.25 0l-26.57-26.57a32.09 32.09 0 010-45.26L382.19 58a1 1 0 00-.3-1.64c-38.82-16.64-89.15-8.16-121.11 23.57-30.58 30.35-32.32 76-21.12 115.84a31.93 31.93 0 01-9.06 32.08L64 380a48.17 48.17 0 1068 68l153.86-167a31.93 31.93 0 0131.6-9.13c39.54 10.59 84.54 8.6 114.72-21.19 32.49-32 39.5-88.56 23.75-120.93a1 1 0 00-1.6-.26z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32"/><circle cx="96" cy="416" r="16"/></svg></div>
+                                <div class="plataforma_pages ${expandido != undefined ? expandido : ""}">`;
+            document.getElementById("main_plataformas").appendChild(newDiv);
+            return newDiv;
+        }
+
+        function criarUrl(plataforma, id_plataforma_page, id_page, url, instrucao){
+            var str = ` <div class="item_plataforma_page" id_plataforma_page="${id_plataforma_page}">
+                            <div class="id_page">${id_page}</div>
+                            <div class="url_page">${url}</div>
+                            <input class="instrucao_page input_instrucao" value="${instrucao}" readonly>
+                        </div>`;
+            plataforma_pages = plataforma.getElementsByClassName("plataforma_pages")[0].insertAdjacentHTML('beforeend', str);
+        }
+
+        function criarUrlEditar(plataforma, id_plataforma_page, id_page, url, ativo, permite_excluir=false){
+            var str = ` <div class="item_plataforma_page" id_plataforma_page="${id_plataforma_page}">
+                            <div class="id_page_editar">${id_page}</div>
+                            <input class="url_page inp_url" value="${url}"></input>
+                            <div class="instrucao_page_editar"><input class="inpu_ativar" type="checkbox" title="Ativar/Desativar" ${ativo == 'true' ? 'checked' : ''}></input><svg onclick="${permite_excluir ? 'excluirUrlPlataforma(this)' : "abrirModal('alerta', 'Não pode excluir porque tem um cliente viculado a esse registro')"}" class="svg-smm" viewBox="0 0 512 512" title="Excluir"><path d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192 192-86 192-192z" fill="none" stroke="${permite_excluir ? 'red' : 'grey'}" stroke-miterlimit="10" stroke-width="32"/><path fill="none" stroke="${permite_excluir ? "red" : "grey"}" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M320 320L192 192M192 320l128-128"/></svg></div>
+                        </div>`;
+            plataforma_pages = plataforma.getElementsByClassName("plataforma_pages")[0].insertAdjacentHTML('beforeend', str);
+            var sels = document.getElementsByClassName("inp_url");
+            new Select(sels[sels.length-1], paginas);
+        }
+
+        function criarUsuario(id_usuario, nome, expandido){
+            var newDiv = document.createElement("div");
+            newDiv.setAttribute("class", "plataforma");
+            newDiv.innerHTML = `<div class="plataforma_header" id_usuario="${id_usuario}" onclick="expandir()">${nome} <svg class="botaoMenu svg-smm" viewBox="0 0 512 512" onclick="abrirModalAdicionarItem('${id_usuario}')"><path d="M393.87 190a32.1 32.1 0 01-45.25 0l-26.57-26.57a32.09 32.09 0 010-45.26L382.19 58a1 1 0 00-.3-1.64c-38.82-16.64-89.15-8.16-121.11 23.57-30.58 30.35-32.32 76-21.12 115.84a31.93 31.93 0 01-9.06 32.08L64 380a48.17 48.17 0 1068 68l153.86-167a31.93 31.93 0 0131.6-9.13c39.54 10.59 84.54 8.6 114.72-21.19 32.49-32 39.5-88.56 23.75-120.93a1 1 0 00-1.6-.26z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32"/><circle cx="96" cy="416" r="16"/></svg></div>
+                                <div class="plataforma_pages ${expandido != undefined ? expandido : ""}">`;
+            return newDiv;
+        }
+
+        function criarUsuarioAtributo(usuario, valor){
+            var str = ` <div class="item_plataforma_page">
+                            <div class="id_page">${valor.id_telegram}</div>
+                        </div>`;
+            for (const [url, url_valor] of Object.entries(valor['urls'])){
+                str += ` <div class="item_plataforma_page" id_plataforma_page="${url_valor.id_url}">
+                            <div class="id_page">${url_valor.id_url}</div>
+                            <div class="url_page">${url}</div>
+                        </div>`;
+            }
+            usuario.getElementsByClassName("plataforma_pages")[0].insertAdjacentHTML('beforeend', str);
+        }
+
+        function criarUsuarioAtributoEditar(){
+
+        }
+
+        function expandir(){
+            if (event.target.classList.contains("plataforma_header")){
+                plataforma_pages = event.target.parentElement.getElementsByClassName("plataforma_pages")[0];
+                plataforma_pages.classList.toggle("open");
+                if (document.getElementById("botao_main_plataformas").classList.contains("ativo")){
+                    plataformas[event.target.getAttribute("id_plataforma")]['class'] = plataforma_pages.classList.contains("open") ? "open" : "";
+                }else{
+                    console.log(event.target.getAttribute("id_usuario"))
+                    usuarios[event.target.getAttribute("id_usuario")]['class'] = plataforma_pages.classList.contains("open") ? "open" : "";
+                }
+            }
+        }
+
+        function abrirEditorInstrucoes(nome_plataforma, id_platafroma, id_plataforma_page){
+            for (const [url, url_valor] of Object.entries(plataformas[id_platafroma]['urls'])){
+                if (id_plataforma_page == url_valor['id_plataforma_page']){
+
+                    var area_editar_instrucao = document.getElementById("area_editar_instrucao");
+
+                    identificacao_instrucao = id_platafroma + " > " + nome_plataforma + " > " + url;
+                    if (identificacao_instrucao in instrucoes_em_edicao){
+                        area_editar_instrucao.value = instrucoes_em_edicao[identificacao_instrucao];
+                    }else{
+                        insstring = url_valor['instrucao'].replaceAll("\t", "&emsp;").replaceAll(" ", "&nbsp;");
+
+                        var mar = '\n';
+                        if (insstring.includes('\\n')){
+                            mar = '\\n';
+                        }
+                        insstring = insstring.split(mar)
+                        for (var l=0; l< insstring.length; l++){
+                            if (insstring[l].trim() == ""){
+                                insstring[l] = '<br>'
+                            }
+                            insstring[l] = '<div>' + insstring[l] + '</div>';
+                        }
+
+                        insstring = insstring.join("")
+
+                        instrucoes_em_edicao[identificacao_instrucao] = insstring;
+
+                        input_pesquisa_instrucoes = document.getElementById("input_pesquisa_instrucoes");
+                        input_pesquisa_instrucoes.insertAdjacentHTML("beforeend", `<option value='${identificacao_instrucao}'>${identificacao_instrucao}</option>`);
+                        input_pesquisa_instrucoes.value = identificacao_instrucao;
+
+                        area_editar_instrucao.innerHTML = insstring;
+                    }
+
+                    alterarFuncao("main_editor_instrucao");
+                    break;
+                }
+            }
+        }
+
+        function alterarFuncao(tela){
+            var botao = document.getElementById("botao_" + tela);
+
+            [...document.getElementsByClassName("botaoMenu")].map(x => x.classList.remove("ativo"));
+            botao.classList.add("ativo");
+
+            Array.prototype.forEach.call(document.getElementsByClassName("main"), function(main){
+                tela == main.id ? main.style.display = "block" : main.style.display = "none";
+            });
+
+            var botoes_acao = document.getElementById("botoes_acao");
+
+            if (botoes_acao.style.display == "flex"){
+                salvarAlteracaoInstrucao();
+            }
+
+            if (tela == "main_plataformas"){
+                botoes_acao.style.display = "none";
+                document.getElementById("input_pesquisa_plataformas").style.display = "flex";
+                document.getElementById("input_pesquisa_instrucoes").style.display = "none";
+                document.getElementById("input_pesquisa_usuarios").style.display = "none";
+                document.getElementById("add_item").style.display = "block";
+                document.getElementById("add_item").title = "Adicionar Plataforma";
+            }else if (tela == "main_editor_instrucao"){
+                botoes_acao.style.display = "flex";
+                document.getElementById("input_pesquisa_plataformas").style.display = "none";
+                document.getElementById("input_pesquisa_instrucoes").style.display = "flex";
+                document.getElementById("input_pesquisa_usuarios").style.display = "none";
+                document.getElementById("add_item").style.display = "none";
+            }else if (tela == "main_usuarios"){
+                botoes_acao.style.display = "none";
+                document.getElementById("input_pesquisa_plataformas").style.display = "none";
+                document.getElementById("input_pesquisa_instrucoes").style.display = "none";
+                document.getElementById("input_pesquisa_usuarios").style.display = "flex";
+                document.getElementById("add_item").style.display = "block";
+                document.getElementById("add_item").title = "Adicionar Usuario";
+            }
+        }
+
+        function abrirModalAdicionarItem(id_plat=""){
+            document.getElementById("container_modal_editar_pataforma").style.display = "block";
+            var modal_editar_pataforma = document.getElementById("modal_editar_pataforma");
+            var input_nome_plat = document.getElementById("input_nome_plat");
+            modal_editar_pataforma.setAttribute("id_plataforma", id_plat)
+            var plataforma_pages = modal_editar_pataforma.getElementsByClassName("plataforma_pages")[0];
+            plataforma_pages.innerHTML = "";
+            input_nome_plat.value = "";
+            document.getElementById("todasUrlsAtivas").checked = true;
+            if (document.getElementById("add_item").title == "Adicionar Plataforma"){
+                input_nome_plat.setAttribute('placeholder', "De um nome para a plataforma...")
+                for (const [id_plataforma, valor] of Object.entries(plataformas)){
+                    if (id_plataforma == id_plat){
+                        input_nome_plat.value = valor['nome'];
+                        plataforma_pages.classList.add("open");
+                        var qtdAtivos = 0;
+                        for (const [url, url_valor] of Object.entries(valor['urls'])) {
+                            console.log(url_valor)
+                            criarUrlEditar(modal_editar_pataforma, url_valor['id_plataforma_page'], url_valor['id_page'], url, url_valor['ativo'], true);
+                            if (url_valor['ativo'] == 'true'){
+                                qtdAtivos++;
+                            }
+                        }
+                        Object.keys(valor['urls']).length == qtdAtivos ? document.getElementById("todasUrlsAtivas").checked = true : document.getElementById("todasUrlsAtivas").checked = false;
+                        break;
+                    }
+                }
+            }else{
+                input_nome_plat.setAttribute('placeholder', "De um nome para o usuário...")
+            }
+        }
+
+        function abrirModal(tipo="alerta", msg=""){
+            console.log('aa')
+            if (tipo == "alerta"){
+                var modalAlerta = document.getElementById("modalAlerta");
+                modalAlerta.style.display = "block";
+                modalAlerta.getElementsByClassName("modal_editar")[0].innerHTML = msg + '<button onclick="fecharModal(this)">ok</button>';
+            }else{
+                var modalPergunta = document.getElementById("modalPergunta")
+                modalPergunta.style.display = "block";
+                modalPergunta.getElementsByClassName("modal_editar")[0].innerHTML = msg + `<button onclick="fecharModal('modalPergunta', true)">Não</button><button onclick="excluirPlataforma()">Sim</button>`;
+            }
+        }
+
+        function fecharModal(md, force=false){
+            if (typeof md != 'object'){
+                md = document.getElementById(md);
+            }
+            if ((event.target.classList.contains("container_modal_editar") || force) && !segurandoClick){
+                md.style.display = "none";
+            }
+        }
+
+        function procurarPlataformas(nome=""){
+            document.getElementById("main_plataformas").innerHTML = "";
+            for (const [id_plataforma, valor] of Object.entries(plataformas)) {
+                if (nome == "" || valor['nome'].includes(nome) || Object.values(valor['urls']).filter(x => x['id_page'].toString().includes(nome)).length > 0 ? true : false){
+                    var plat = criarPlataforma(id_plataforma, valor['nome'], valor['class']);
+                    for (const [url, url_valor] of Object.entries(valor['urls'])) {
+                        criarUrl(plat, url_valor['id_plataforma_page'], url_valor['id_page'], url, url_valor['instrucao']);
+                    }
+                }
+            }
+        }
+
+        function procurarUsuarios(nome=""){
+            var main_usuarios = document.getElementById("main_usuarios");
+            main_usuarios.innerHTML = "";
+            for (const [id_usuario, valor] of Object.entries(usuarios)){
+                if (nome == "" || valor['nome'].includes(nome)){
+                    var usuario = criarUsuario(id_usuario, valor['nome'], valor['class']);
+                    main_usuarios.appendChild(usuario);
+                    criarUsuarioAtributo(usuario, valor);
+                }
+            }
+        }
+
+        function retornarTextoInstrucao(){
+            var area_editar_instrucao = document.getElementById("area_editar_instrucao");
+            var linhas = area_editar_instrucao.children;
+
+            var ins;
+
+            for (var l=0; l < linhas.length; l++){
+                if (linhas[l].innerText.trim() == ""){
+                    if (l < linhas.length-1){
+                        ins += '\n';
+                    }
+                }else{
+                    if (l < linhas.length-1){
+                        ins += linhas[l].innerText + '\n';
+                    }else{
+                        ins += linhas[l].innerText;
+                    }
+                }
+            }
+
+            if (ins == null){
+                ins = "";
+            }
+
+            ins = ins.replaceAll('undefined', '');
+            ins = ins.replaceAll(String.fromCharCode(160), ' ')
+            return ins;
+        }
+
+        function alterarInstrucao(input){
+            salvarAlteracaoInstrucao(input.getAttribute("valorantigo"));
+            for (const [url_identificacao, url_valor] of Object.entries(instrucoes_em_edicao)){
+                if (url_identificacao == input.value.trim()){
+                    document.getElementById("area_editar_instrucao").innerHTML = url_valor;
+                }
+            }
+        }
+
+        function cancelarAlteracaoInstrucao(){
+            var input_pesquisa_instrucoes = document.getElementById("input_pesquisa_instrucoes");
+            delete instrucoes_em_edicao[input_pesquisa_instrucoes.value];
+            for (var [pos, el] of Object.entries(input_pesquisa_instrucoes.getElementsByTagName('option'))){
+                if (el.value == input_pesquisa_instrucoes.value){
+                    el.remove();
+                    document.getElementById("area_editar_instrucao").innerHTML = "";
+                    break;
+                }
+            }
+            for (var [pos, el] of Object.entries(input_pesquisa_instrucoes.getElementsByTagName('option'))){
+                document.getElementById("area_editar_instrucao").innerHTML = instrucoes_em_edicao[el.value];
+                break;
+            }
+            pararTeste();
+            alterarFuncao("main_plataformas");
+        }
+
+        function ativarDesativarTodasUrl(){
+            var ativo = document.getElementById("todasUrlsAtivas").checked;
+            Array.prototype.forEach.call(document.getElementById("modal_editar_pataforma").getElementsByClassName("plataforma_pages")[0].getElementsByClassName("inpu_ativar"), function(el){
+                el.checked = ativo;
+            });
+        }
+
+        function excluirPlataforma(){
+            fecharModal(document.getElementById("modalPergunta"), true);
+            
+            var id_plataforma = document.getElementById("modal_editar_pataforma").getAttribute("id_plataforma").trim();
+            console.log(id_plataforma)
+            if (id_plataforma != ""){
+                pywebview.api.apagarPlataforma(id_plataforma).then(function(response) {
+                    if (response != null){
+                        alert(response)
+                    }
+                });
+            }
+            fecharModal(document.getElementById("container_modal_editar_pataforma"), true);
+        }
+
+        function adicionarUrlPlataforma(){
+            var modal_editar_pataforma = document.getElementById("modal_editar_pataforma");
+            criarUrlEditar(modal_editar_pataforma, '', '', '', true, true);
+        }
+
+        function excluirUrlPlataforma(el){
+            el.closest(".item_plataforma_page").remove();
+        }
+
+        function salvarAlteracoes(){
+            var poderfecharModal = true;
+
+            var modal_editar = document.getElementById("modal_editar_pataforma");
+            var input_nome_plat = document.getElementById("input_nome_plat").value.trim();
+            var id_plat = modal_editar.getAttribute("id_plataforma");
+            var plataforma_pages = modal_editar_pataforma.getElementsByClassName("plataforma_pages")[0];
+
+            if (document.getElementById("add_item").title == "Adicionar Plataforma"){
+                if (input_nome_plat == ""){window.alert("De um nome para a plataforma"); poderfecharModal=false}
+                
+                var urls_novo = {};
+                Array.prototype.forEach.call(plataforma_pages.children, function(ch){
+                    var url = ch.getElementsByClassName('url_page')[0].value;
+                    urls_novo[url] = {'ativo': ch.getElementsByClassName('inpu_ativar')[0].checked.toString()};
+                })
+                var plataforma_novo = {[+id_plat]: {'id_plataforma': id_plat, 'nome': input_nome_plat, 'urls': urls_novo}};
+                console.log(plataforma_novo)
+                pywebview.api.atualizarPlataforma(id_plat, plataforma_novo).then(function(response) {
+                    if (response != null){
+                        alert(response)
+                    }
+                });
+            }else{
+                if (input_nome_plat == ""){window.alert("De um nome para o Usuário"); poderfecharModal=false}
+                var usuarios_novo = {};
+                Array.prototype.forEach.call(plataforma_pages.children, function(ch){
+                    console.log(ch)
+                    var url = ch.getElementsByClassName('url_page')[0].value;
+                    usuarios_novo[url] = {'ativo': ch.getElementsByClassName('inpu_ativar')[0].checked.toString()};
+                });
+                console.log(usuarios_novo);
+            }
+
+            if (poderfecharModal){
+                fecharModal(document.getElementById("container_modal_editar_pataforma"), true);
+            }
+        }
+
+        function salvarAlteracaoInstrucao(valor=null){
+            if (valor == null){
+                valor = document.getElementById("input_pesquisa_instrucoes").value;
+            }
+            if (valor != null && valor != ""){
+                instrucoes_em_edicao[valor] = document.getElementById("area_editar_instrucao").innerHTML;
+                valor = valor.split(">");
+                var id_plataforma = valor[0].trim();
+                var plataforma = valor[1].trim();
+                var url_pagina = valor[2].trim();
+                if (id_plataforma in plataformas && url_pagina in plataformas[id_plataforma]['urls']){
+                    document.querySelector('.item_plataforma_page[id_plataforma_page="' + plataformas[id_plataforma]['urls'][url_pagina]['id_plataforma_page'] + '"]').getElementsByClassName("input_instrucao")[0].value = retornarTextoInstrucao();
+                }
+            }
+        }
+
+        function gravarAlteracaoInstrucao(){
+            salvarAlteracaoInstrucao();
+            var input_pesquisa_instrucoes = document.getElementById("input_pesquisa_instrucoes");
+            var valor = input_pesquisa_instrucoes.value;
+            if (valor != null && valor != ""){
+                valor = valor.split(">");
+                var id_plataforma = valor[0].trim();
+                var plataforma = valor[1].trim();
+                var url_pagina = valor[2].trim();
+
+                for (const [url, url_valor] of Object.entries(plataformas[id_plataforma]['urls'])){
+                    if (url == url_pagina){
+                        instrucao_alterada = retornarTextoInstrucao();
+                        if (instrucao_alterada != null){
+                            url_valor['instrucao'] = instrucao_alterada;
+                            pywebview.api.gravarInstrucao(url_valor['id_plataforma_page'], instrucao_alterada).then(function() {
+                                //document.getElementById("retorno").innerHTML = response;
+                                cancelarAlteracaoInstrucao();
+                            });
+                        }else{
+                            alert("O texto da intrução está nulo");
+                        }
+                    }
+                }
+            }else{
+                alert("Nenhuma instrução para salvar");
+            }
+
+        }
+
+        function testarAlteracaoInstrucao(){
+            document.getElementById("botaoPararTeste").style.display = "block";
+            var input_pesquisa_instrucoes = document.getElementById("input_pesquisa_instrucoes");
+            var valor = input_pesquisa_instrucoes.value.split(">");
+            var url = valor[1].trim();
+            var plataforma = valor[0].trim();
+
+            pywebview.api.testarInstrucao(url, retornarTextoInstrucao()).then(function() {
+                //document.getElementById("retorno").innerHTML = response;
+            });
+        }
+
+        function pararTeste(){
+            limparMarcarLinha();
+            //pywebview.api.pararDebug().then(function() { });
+        }
+
+        function marcarLinha(pos){
+
+
+            var mar = '\n';
+            var area_editar_instrucao = document.getElementById("area_editar_instrucao");
+            var linhas = area_editar_instrucao.children;
+
+            /*if (linhas.includes('\\n')){
+                mar = '\\n'
+            }*/
+            //mar = '<br>'
+            //linhas = linhas.split(mar);
+            var linhas_aux = "";
+            //linhas[pos] = '<p style="background-color: rgb(172, 140, 106);">' + linhas[pos] + '</p>'
+
+            for (var l=0; l < linhas.length; l++){
+                if (l == pos){
+                    //linhas_aux += '<p style="background-color: rgb(172, 140, 106);">' + linhas[l] + '</p>'
+                    linhas[l].style.backgroundColor = "rgb(172, 140, 106)";
+                }
+                else{
+                    //linhas_aux += '<p>' + linhas[l] + '</p>';
+                    linhas[l].setAttribute("style", "");
+                }
+                linhas_aux += linhas[l].outerHTML
+            }
+
+            area_editar_instrucao.innerHTML = linhas_aux;
+
+        }
+
+        function limparMarcarLinha(){
+            document.getElementById("botaoPararTeste").style.display = "none";
+            Array.prototype.forEach.call(document.getElementById("area_editar_instrucao").children, function(l){
+                l.setAttribute("style", "");
+            });
+        }
+
+        document.ondblclick = function(){
+            var instrucoes = event.target.closest(".instrucao_page");
+            if (instrucoes){
+                var plataforma_header = instrucoes.closest(".plataforma").getElementsByClassName("plataforma_header")[0];
+
+                var id_plataforma = plataforma_header.getAttribute("id_plataforma");
+                var nome_plataforma = plataforma_header.innerText;
+
+                var item_plataforma_page = instrucoes.closest(".item_plataforma_page");
+                var id_plataforma_page = item_plataforma_page.getAttribute("id_plataforma_page");
+
+                if (id_plataforma in plataformas){
+                    abrirEditorInstrucoes(nome_plataforma, id_plataforma, id_plataforma_page);
+                }else{
+                    alert("Problema");
+                }
+            }
+        }
+
+        document.onmousedown = function(){
+            segurandoClick = true;
+        }
+
+        document.onmouseup = function(){
+            segurandoClick = false;
+        }
+
+        document.onkeyup = function(){
+            if (event.key == "Control"){
+                segurandoCtrl = false;
+            }
+        }
+
+        document.onkeydown = function(){
+            elctv = document.activeElement;
+            if (elctv != null && elctv.id == 'area_editar_instrucao'){
+                if (window.event.key == 'Tab'){
+                    window.event.preventDefault();
+                    var start = elctv.selectionStart;
+                    var end = elctv.selectionEnd;
+
+                    elctv.value = elctv.value.substring(0, start) + "    " + elctv.value.substring(end);
+                    elctv.setSelectionRange(start + 4, start + 4);
+                }
+            }
+
+            if (window.event.key == "Control"){ segurandoCtrl = true;}
+            if (window.event.key == "Tab"){
+                if (segurandoCtrl){
+                        window.event.preventDefault();
+
+                        //var input_pesquisa_instrucoes = document.getElementById("input_pesquisa_instrucoes");
+                        //input_pesquisa_instrucoes.getElementsByTagName('option')
+
+                        //var event = new MouseEvent('mousedown');
+                        //input_pesquisa_instrucoes.dispatchEvent(event);
+                }
+            }
+        }
+
+        class Select{
+            opcoesSelect = null;posSelecionado = -1;temEvento = false;corFundo = "rgb(200, 200, 200)";
+            constructor(el, itens, inner='default', attrs={}){
+                el.addEventListener("focus", () => {this.construirOpcoes(el, itens, inner, attrs, false, true);});
+                el.addEventListener("focusout", () => {if(event.relatedTarget != null && event.relatedTarget.parentElement == this.opcoesSelect){this.atribuir(el, event.relatedTarget, inner, itens)}this.limpar();});
+                el.addEventListener("keydown", () => {if (this.opcoesSelect != null){if (event.key == "ArrowDown" || event.key == "ArrowUp"){this.teclaMovimentar(event.key);}else if(event.key == "Enter" && this.posSelecionado != -1){this.atribuir(el, this.opcoesSelect.children[this.posSelecionado], inner, itens);this.limpar();}}});
+                el.addEventListener("keyup", () => {if (event.key != "ArrowDown" && event.key != "ArrowUp" && event.key != "Enter" && event.key != "ArrowLeft" && event.key != "ArrowRight"){this.construirOpcoes(el, itens, inner, attrs, true, false);}});
+            }
+            limpar(){if (this.opcoesSelect != null){this.opcoesSelect.remove();this.opcoesSelect = null;this.posSelecionado=-1;this.temEvento = false;}}
+            atribuir(el, item, inner, itens){el.value = item.innerText; el.closest(".id_page").innerHTML = Object.keys(itens.find(item => Object.values(item).includes(item.innerText)))[0];}
+            construirOpcoes(el, itens, inner, attrs, limpar, todos=false){
+                if (limpar && this.opcoesSelect != null){this.opcoesSelect.remove();this.opcoesSelect = null;}
+                if (this.opcoesSelect == null){
+                    var valoresSelect = [];
+                    if (todos){valoresSelect = itens;
+                    }else{var t = new RegExp(el.value.replace("?", ""), 'i');valoresSelect = itens.filter(x => t.test(x.url.replace("?", "")));}
+
+                    if (valoresSelect.length > 0){
+                        this.opcoesSelect = document.createElement("div");
+                        this.opcoesSelect.setAttribute("style", `width:${window.getComputedStyle(el).getPropertyValue('width')}; left:${el.getBoundingClientRect().left+3}px; top: ${el.getBoundingClientRect().bottom}px; position: absolute; max-height: 200px; overflow: auto; background-color: ${this.corFundo};`);
+                        var itemS = `<div onmouseover="this.style.backgroundColor='lightgray';" onmouseout="this.style.backgroundColor='white';" tabindex="0" style='user-select: none;'>`;
+                        this.opcoesSelect.innerHTML = `${itemS} ${valoresSelect.map(item => item.url).join("</div>"+itemS)} </div></div>`;
+                        document.body.insertAdjacentElement("afterend", this.opcoesSelect);
+                    }
+                }
+            }
+            teclaMovimentar(key){
+                if (this.opcoesSelect.children.length > 0){
+                    if (key == "ArrowDown"){this.posSelecionado ++;if (this.posSelecionado >= this.opcoesSelect.children.length){this.posSelecionado = 0;}
+                    }else if (key == "ArrowUp"){event.preventDefault();this.posSelecionado --;if (this.posSelecionado < 0){this.posSelecionado = this.opcoesSelect.children.length - 1;}}
+                    for (var [pos, child] of Object.entries(this.opcoesSelect.children)){if (pos == this.posSelecionado){child.style.backgroundColor = "grey";child.scrollIntoView({behavior: 'auto', block: 'center', inline: 'center'});}else{child.style.backgroundColor = this.corFundo;}}
+                }
+            }
+        }
+
+
+        //procurarPlataformas();
+        //procurarUsuarios();
+        //alterarFuncao("main_usuarios")
+        //abrirEditorInstrucoes('bll', '2');
+    </script>
+
+</body>
+</html>

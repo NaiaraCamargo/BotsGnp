@@ -1,0 +1,1487 @@
+# Imports da biblioteca padrão
+import math
+import os
+import re
+import string
+import time
+import copy
+import queue
+import shutil
+import locale
+import zipfile
+import threading
+import tempfile
+import traceback
+import mimetypes
+import sqlite3
+from pathlib import Path
+from itertools import islice
+from datetime import datetime
+from os.path import isfile
+import rarfile
+import subprocess
+import unicodedata
+# Imports de bibliotecas externas
+import requests
+import ghostscript
+import pypandoc
+from PIL import Image
+from unidecode import unidecode
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+from PyPDF2 import PdfReader, PdfWriter
+from urllib.parse import urlparse, parse_qs
+
+# Imports de módulos locais
+from funcoespncp import *
+from gerar_planilha import *
+from repositoriopncp import *
+
+
+retornoMsg = ""
+
+class ControleMetadados:
+    def __init__(self):
+        if not isfile("metadados.db"):
+            logs.info("Base metadados.db inexistente, criando arquivo...")
+            f = open("metadados.db", "w")
+            f.close()
+            logs.info("Arquivo metadados.db criado com sucesso!")
+
+        with sqlite3.connect("metadados.db") as conexao:
+            logs.info("Verificando tabela metadados...")
+            self.conexao = conexao
+            self.cursor = conexao.cursor()
+            self.cursor.execute("CREATE TABLE IF NOT EXISTS metadados (nome char(100), valor char(250));")
+            self.conexao.commit()
+            logs.info("Tabela metadados ok!")
+
+    def retornar_valor(self):
+        self.cursor.execute("SELECT valor FROM metadados WHERE nome = 'caminho_webdriver'")
+        retorno = self.cursor.fetchone()
+        if retorno is not None:
+            return retorno[0]
+        return None
+
+    def atualizar_valor(self, novo_valor):
+        self.cursor.execute("SELECT valor FROM metadados WHERE nome = 'caminho_webdriver'")
+        retorno = self.cursor.fetchone()
+        if retorno is not None:
+            self.cursor.execute(f"UPDATE metadados SET valor = '{novo_valor}' WHERE nome = 'caminho_webdriver'")
+        else:
+            self.cursor.execute(f"INSERT INTO metadados VALUES('caminho_webdriver', '{novo_valor}')")
+        self.conexao.commit()
+
+metadados = ControleMetadados()
+
+
+def carregar_filtros(nome, valores='', filtros_base=None):
+    if filtros_base is None:
+        filtros_base = {}
+
+    if isinstance(nome, dict):
+        for key_dic in nome:
+            filtros_base[key_dic] = nome[key_dic]
+    elif isinstance(nome, str):
+        if nome not in filtros_base:
+            filtros_base[nome] = {}
+
+        if isinstance(valores, dict):
+            filtros_base[nome] = valores
+        else:
+            for f in valores.split('|'):
+                f = f.split("=")
+                if len(f) == 1:
+                    filtros_base[nome][f[0].strip()] = ""
+                elif len(f) == 2:
+                    filtros_base[nome][f[0].strip()] = f[1].strip()
+    else:
+        logs.error(f"Filtro não pode ser carregado - Nome: {str(nome)} - Valores: {str(valores)}")
+
+    return filtros_base
+
+def controles_iniciais(driver):
+    try:
+        html = driver.find_element(By.TAG_NAME, "html")
+        html = unidecode(html.get_attribute("innerHTML").lower().casefold())
+        if "sua conexao nao e particular" in html or "your connection is not private" in html:
+            try:
+                botoes = driver.find_elements(By.TAG_NAME, "button")
+                for botao in botoes:
+                    bt_html = unidecode(botao.get_attribute("innerHTML").lower().casefold())
+                    if "avancado" in bt_html:
+                        botao.click()
+                        link = driver.find_element(By.ID, "proceed-link")
+                        link.click()
+                        logs.info("Foi executado a acao de Conexao nao segura")
+                        time.sleep(2)
+                        break
+            except Exception as ecn:
+                logs.info("Foi detectado Conexao nao segura mas nao foi possivel executar - " + str(ecn))
+    except Exception as eci:
+        logs.error("Controles Iniciais - Problemas nas verificacoes - ", str(eci))
+        
+def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
+    def target(q):
+        try:
+            if usar_opcao2:
+                caminho_chromedriver = ChromeDriverManager().install()
+                service = Service(executable_path=caminho_chromedriver)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
+            driver.implicitly_wait(10)
+            q.put(driver)
+        except Exception as e:
+            q.put(e)
+
+    q = queue.Queue()
+    t = threading.Thread(target=target, args=(q,), daemon=True)
+    t.start()
+    t.join(timeout)
+
+    if t.is_alive():
+        raise TimeoutError("Timeout ao iniciar o ChromeDriver")
+
+    result = q.get()
+    if isinstance(result, Exception):
+        raise result
+    return result
+
+def encerrar_driver_com_timeout(driver, timeout=5):
+    def target():
+        try:
+            driver.quit()
+        except Exception as e:
+            logs.warning(f"[AVISO] Erro ao tentar fechar o driver: {e}")
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logs.warning("[AVISO] driver.quit() travou e foi abandonado")
+        
+def criar_driver(mostrar_browser=False):
+    # Cria um diretório temporário para perfil isolado
+    profile_dir = tempfile.mkdtemp()
+    chrome_options = Options()
+    chrome_options.add_argument(f"--user-data-dir={profile_dir}")
+
+    if not mostrar_browser:
+        chrome_options.add_argument("--headless=new")
+
+    chrome_options.add_argument('--log-level=3')  # Log mínimo
+    driver = None
+
+    # Tenta iniciar Chrome via PATH com timeout
+    try:
+        driver = iniciar_driver_thread(chrome_options)
+    except Exception as e1:
+        logs.error(f"[CRITICAL] Erro ao iniciar Chrome via PATH: {e1}")
+        # Segunda tentativa: baixar e usar ChromeDriver com timeout
+        try:
+            driver = iniciar_driver_thread(chrome_options, usar_opcao2=True)
+        except Exception as e2:
+            logs.error(f"[FATAL] Falha ao baixar/iniciar ChromeDriver: {e2}")
+            logs.debug(traceback.format_exc())
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            raise RuntimeError(f"Falha total ao iniciar o ChromeDriver: {e2}") from e2
+
+    return driver, profile_dir
+
+    
+def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
+    id_pagina = notificacao_config['id_pagina']
+    ids_usuarios = notificacao_config['ids_usuarios']
+    plataforma = notificacao_config['plataforma']
+    lista_elementos = []
+    ultima_limpeza = time.time()
+
+    try: 
+        if url.strip() == "":
+            logs.error("A URL está vazia")
+            return
+        
+        filtros_base = carregar_filtros(filtros)
+        url_base = url
+
+        while True:
+            hora_atual = datetime.now().hour
+            processar_dia = configuracoes.get('processar_dia')
+            controle_logs(f"{plataforma}-new")
+            
+            driver, profile_dir = None, None
+            try:
+                driver, profile_dir = criar_driver(mostrar_browser)
+                acessar_url(driver, url_base, plataforma, processar_dia, hora_atual)
+                
+                lista_elementos.clear()
+                total_processados = 0
+                quantidade_para_processar = 0
+                pagina = 2
+                total_itens_tmp = 0
+
+                print(f"\nIniciando processamento da página: {url}\n")
+                processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios,lista_elementos, plataforma,
+                     total_processados, quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
+                
+                atualizar_ultima_data(id_pagina)
+                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
+
+                #Limpar console a cada 10 minutos
+                if time.time() - ultima_limpeza >= 600:
+                    limpar_console()
+                    carregar_configuracoes()
+                    ultima_limpeza = time.time()  
+
+                print("\nAguardando novos processos...\n")
+            
+            except Exception as e_conectar:
+                logs.error(f"Erro ao conectar na URL '{url_base}': {str(e_conectar)}")
+                time.sleep(2)  # Espera 2 segundos antes de tentar novamente
+
+            finally:
+                if driver:
+                    encerrar_driver_com_timeout(driver) 
+                if profile_dir:
+                    shutil.rmtree(profile_dir, ignore_errors=True)
+                    
+            time.sleep(0.1)
+          
+    except Exception as e_crawler:
+        logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
+
+def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
+    try:
+        if processar_dia and 5 <= hora_atual < 9:
+            if plataforma == "obra":
+                 # Substitui o trecho &tam_pagina=XX por &tam_pagina=50
+                url = url_base.replace(
+                    next((part for part in url_base.split('&') if part.startswith('tam_pagina=')), '&tam_pagina=20'),
+                    'tam_pagina=50'
+                )
+            else:
+                url = url_base + "&tam_pagina=50"
+        else:
+            url = url_base
+        driver.get(url)
+    except Exception as e:
+        logs.warning(f"Erro ao acessar a URL '{url_base}': {e}. Tentando novamente...")
+        time.sleep(0.2)
+        raise
+        
+def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, 
+                     quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp):
+    try:
+        lista_planilha = []
+        controles_iniciais(driver)
+        
+        pagination_info = driver.find_elements(By.CLASS_NAME, "pagination-information")
+        if not pagination_info:
+            print("Nenhum elemento de paginação encontrado.\n")
+            return
+
+        match = re.search(r'(\d+)(?=\s*itens)', pagination_info[0].text.strip())
+        if not match:
+            return
+    
+        total_itens = total_itens_tmp if total_itens_tmp > 0 else int(match.group(1))
+        registros = int(filtrosBase["banco"].get("qtd_registros", 0) or 0)
+
+        if  total_itens == registros:
+            print(f"Execução interrormpida pelo processo de Heurística - {registros}/{total_itens}\n")
+            return  # Interrormpe o processo se a heurística for atendida
+                            
+        retorno_elemento = driver.find_elements(By.CLASS_NAME, value='br-list')
+        listaElementos.append(retorno_elemento[:])
+        
+        if not listaElementos or not listaElementos[-1]:
+            return
+        
+        posicao_index_atual = [1]
+        retorno_elemento += listaElementos[-1][posicao_index_atual[-1]].find_elements(By.CLASS_NAME, value='br-item')
+        listaElementos.append(retorno_elemento[:])
+        
+        if len(listaElementos) < 1:
+            return
+ 
+        novalistaElementos = [el.text for el in listaElementos[1][4:] if el.text.strip() != '']
+        palavra_chave = list(filtrosBase['banco']['palavraschave'].keys())[0].strip().lower()
+        processar_todos = configuracoes.get(f"processar_todos_{palavra_chave}", False)
+        processa_mais_paginas = False
+
+        if quantidade_para_processar > 0:
+            quantidade_para_processar = quantidade_para_processar
+            processa_mais_paginas = True
+        elif processar_todos:
+            quantidade_para_processar = total_itens
+            total_itens_tmp = total_itens
+        elif processar_dia and 5 <= hora_atual < 9:
+            quantidade_para_processar = 50
+        elif total_itens > registros:
+            quantidade_para_processar = total_itens - registros
+            if quantidade_para_processar > 10:
+                total_itens_tmp = total_itens 
+                processa_mais_paginas = True
+        else:
+            quantidade_para_processar = 10
+            
+        error_timeout = 0
+        for texto in islice(novalistaElementos, quantidade_para_processar):
+            total_processados += 1
+            print(f"PROCESSANDO NO FOR: ", total_processados)
+            palavras_destacadas = validar_texto(texto, filtrosBase)
+            
+            if plataforma == "obra":
+                modalidade_valida = validar_modalidade_obras(texto)
+                if not modalidade_valida:
+                    continue
+            
+            if not palavras_destacadas and plataforma != "obra":
+                continue
+ 
+            edital = extrair_dados(texto, urlBase)
+            
+            if processar_dia and 5 <= hora_atual < 9:
+                if datetime.strptime(edital["Data"], "%d/%m/%Y").date() != datetime.today().date():
+                    continue     
+            
+            palavras_limpa = [p.strip("'\"") for p in palavras_destacadas if p.strip("'\"")]
+            edital["palavras_chave"] = palavras_limpa if palavras_limpa else ""
+                
+            edital.update({
+                "id_pagina": id_pagina,
+                "Descricao": destacar_palavras(limpar_para_mysql(edital['Descricao']), palavras_destacadas),
+                "notificar_retorno": True,
+                "envio_notificacao": datetime.now()
+            })         
+
+            resultadoExisteEdital = verificar_existencia_edital_new( edital["Link"], edital["Orgao"], edital["Numero"])
+            if len(resultadoExisteEdital) > 0:
+                print(f"EDITAL JA EXISTE NO BANCO: ", resultadoExisteEdital[0]['link'])
+                logs.info(f"Edital já existe no banco: {resultadoExisteEdital[0]['id']} - {resultadoExisteEdital[0]['link']}\n")                        
+                continue
+            
+            novos_dados = extrair_dados_nova_pagina(driver, edital)
+            if novos_dados == "TimeoutException":
+                error_timeout +=1
+                if error_timeout >= 3:      
+                    print("==============================================================================================\n")
+                    print("POSSÍVEL ERRO NO SITE... EXTRAÇÃO DE MAIS DE 3 LINKS COM TIMEOUT. NÃO SERÁ MAIS PROCESSADO NENHUM EDITAL!")
+                    print("AGUARDANDO 5 MINUTOS PARA NOVA TENTATIVA ... ")
+                    print("\n==============================================================================================\n")
+                    
+                    erro = True
+                    enviar_mensagem(edital, ids_usuarios, novo_processo=True, erro = erro) 
+                    
+                    time.sleep(300)
+                    return
+                
+                continue
+            
+            error_timeout = 0
+            edital.update(novos_dados)
+            
+            pasta_killer, pasta_killer_comprimidos = obter_pastas_download(edital, plataforma)
+            edital["pasta_download"] = pasta_killer
+            edital["pasta_comprimidos"] = pasta_killer_comprimidos
+            print(f"\nProcessando: {edital}\n") 
+            
+            if plataforma == "obra" and edital["Uf"].upper() == "RS" or plataforma == "pncp":
+                enviar_mensagem(edital, ids_usuarios, novo_processo=True)         
+                
+            acao_baixar_arquivo(driver, edital, plataforma) 
+            gravar_novo_processo(edital, plataforma)                                 
+            lista_planilha.append(copy.deepcopy(edital))
+                                
+        if len(lista_planilha) > 0:
+            print(f"Processando Planilhas...\n")
+            gerar_excel_registros(lista_planilha, plataforma, True) 
+            time.sleep(2)
+                
+        if processar_todos or processa_mais_paginas:
+            print(f"Total Processados {palavra_chave}: {total_processados}/ Total há processar {palavra_chave}: {quantidade_para_processar}\n")
+            logs.info(f"Total Processados {palavra_chave}: {total_processados}/ Total há processar {palavra_chave}: {quantidade_para_processar}\n")
+            while total_processados < quantidade_para_processar:
+                if palavra_chave not in ["obra", "pintura", "reforma"]:
+                    if quantidade_para_processar > 10 and quantidade_para_processar <= 50 and processa_mais_paginas:
+                        tam_pagina = quantidade_para_processar + total_processados
+                        pagina = 1
+                        if 'tam_pagina=' in urlBase:
+                            # Substitui o valor existente
+                            urlBase = re.sub(r'tam_pagina=\d+', f'tam_pagina={tam_pagina}', urlBase)
+                        else:
+                            # Adiciona o parâmetro no final
+                            urlBase += f'&tam_pagina={tam_pagina}'
+                        
+                url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
+                print(f"Iniciando processamento da palavra_chage: {palavra_chave} na página: {pagina} url: {url}\n")
+                logs.info(f"Iniciando processamento da palavra_chage: {palavra_chave} na página: {pagina} url: {url}\n")
+           
+                driver.get(url)
+                pagina += 1  
+               
+                listaElementos.clear()
+                processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma,  
+                                total_processados, quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
+
+            if palavra_chave in ["obra", "pintura", "reforma"]:
+                configuracoes[f"processar_todos_{palavra_chave}"] = False
+                atualizar_arquivo_configuracoes()
+            atualizar_heuristica(id_pagina, total_itens)
+            carregar_configuracoes()
+            filtros["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
+            crawler(urlBase, filtros, notificacao_config)
+                      
+        atualizar_heuristica(id_pagina, total_itens) 
+    
+    except Exception as e:
+        logs.error(f"Erro no processamento da página: {e}\n")
+
+def normalizar_unicode(texto):
+    # Remove acentuação e caracteres não-ASCII (último recurso)
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+
+def normalizar_hifens(texto):
+    # Substitui hífens especiais por hífen ASCII padrão "-"
+    return re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2212]', '-', texto)
+
+def limpar_para_mysql(texto):
+    if not isinstance(texto, str):
+        return texto
+    texto = normalizar_hifens(texto)
+    texto = unicodedata.normalize("NFKC", texto)  # Normaliza formas compostas para pré-compostas
+    return texto
+
+def obter_pastas_download(edital,plataforma):
+    try:
+        pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital,plataforma)
+        raiz_local = configuracoes.get("raiz_local")
+        raiz_server = configuracoes.get("raiz_server")
+        pasta_killer = pasta_edital.replace(raiz_local, raiz_server)
+        pasta_killer_comprimidos = pasta_comprimidos.replace(raiz_local, raiz_server)
+        pasta_killer = os.path.normpath(pasta_killer)
+        pasta_killer_comprimidos = os.path.normpath(pasta_killer_comprimidos)
+        
+        return pasta_killer, pasta_killer_comprimidos
+    except Exception as e:
+        return None 
+
+def validar_modalidade_obras (texto):
+    modalidade = extrair_texto(texto, 'Modalidade da Contratação: ')
+    if modalidade not in ("Concorrência - Eletrônica", "Concorrência - Presencial", "Pregão - Eletrônico",
+                            "Pregão - Presencial", "Dispensa", "Dispensa - Eletrônica"):
+        return False
+    else:
+        return True
+
+def validar_texto(texto, filtrosBase):
+    pos_objeto = texto.lower().find("objeto:")
+    if pos_objeto == -1:
+        return [] 
+
+    texto_objeto = texto[pos_objeto + len("Objeto:"):].strip()
+    texto_normalizado = unidecode(texto_objeto.lower())
+
+    palavras_encontradas = []
+
+    for palavra_chave, palavras_bloqueadas in filtrosBase['banco']['palavraschave'].items():
+        if palavra_chave not in texto_normalizado:
+            continue
+
+        # Bloqueia se encontrar uma palavra proibida
+        if any(re.search(rf'\b{re.escape(pb)}\b', texto_normalizado) for pb in palavras_bloqueadas):
+            continue
+
+        # Busca todas as palavras do texto original que começam com a palavra-chave
+        palavras = texto_objeto.split()
+        palavras_encontradas.extend([w.strip(string.punctuation) for w in palavras if unidecode(w.lower()).startswith(palavra_chave)])
+
+    return palavras_encontradas
+
+def destacar_palavras(texto, palavras):
+
+    #Destaca todas as ocorrências exatas das palavras no texto com <b></b>, sem sobreposição e respeitando posições.
+    if not palavras:
+        return texto
+
+    # Ordenar por tamanho decrescente para evitar conflitos em palavras contidas umas nas outras
+    palavras_ordenadas = sorted(set(palavras), key=len, reverse=True)
+    
+    # Regex para destacar cada palavra, usando boundaries para evitar partes de outras palavras
+    def substituir(match):
+        return f"<b>{match.group(0)}</b>"
+
+    for palavra in palavras_ordenadas:
+        # Apenas destaca se for uma palavra completa (pode ajustar \b conforme o caso)
+        texto = re.sub(rf'\b{re.escape(palavra)}\b', substituir, texto, flags=re.IGNORECASE)
+
+    return texto
+
+
+def extrair_dados(texto, urlBase):
+    id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
+    numero = extrair_numero_edital(texto)
+    
+    # Só mantém se tiver barra (/) no número extraído
+    numero2 = numero.split('/')[0] if numero and '/' in numero else ''
+    
+    return {
+        'Numero':numero,
+        'NumeroAux': numero2,
+        'IdContratacaoPncp': id_aux,
+        'Licitacao': extrair_texto(texto, 'Modalidade da Contratação: '),
+        'Data': extrair_texto(texto, 'Última Atualização: '),
+        'Orgao': extrair_texto(texto, 'Órgão: '),
+        'Municipio': extrair_texto(texto, 'Local: '),
+        'Uf': extrair_texto(texto, 'Local: ').split('/')[1],
+        'Descricao': extrair_texto(texto, 'Objeto: '),
+        'Cnpj': id_aux.split('-')[0],
+        'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
+    }
+    
+def extrair_numero_edital(texto):
+    
+    texto = texto.split('\n', 1)[0]
+    # Remove conteúdos entre parênteses e pipes
+    texto = re.sub(r'\([^)]*\)', '', texto)
+    texto = texto.replace('|', ' ')
+    texto = texto.replace(' /', '/')  # Remove espaços antes da barra final
+ 
+    # Remove tudo após "nº" até o primeiro número
+    texto = re.sub(r'(n[ºo])\s*[^\d/]*', r'\1 ', texto, flags=re.IGNORECASE)
+    
+    # Remove espaços após "nº" ou "n°"
+    texto = re.sub(r'(n[ºo]\s+[A-Z]{2})\s+', r'\1', texto)
+
+    # Tenta encontrar a parte após "nº" com números/letras/separadores
+    match = re.search(
+        r'n[ºo]\s*([A-Za-z0-9\-./]+)', 
+        texto, 
+        re.IGNORECASE
+    )
+
+    if match:
+        numero = match.group(1).strip()
+
+        # Remove prefixos com letras (ex: PE, PD, PMJ, PL)
+        numero = re.sub(r'^[A-Za-z\-]+', '', numero)
+
+        # Remove prefixos numéricos com hífen (ex: 2025-561 → 561)
+        numero = re.sub(r'^\d{4}-', '', numero)
+        
+        # Remove letras no meio de partes separadas por /
+        numero = re.sub(r'/[A-Za-z]+(?=/)', '', numero)
+
+        # Remove partes como -PRORROGAÇÃO/2025 ou -DIV/2025
+        numero = re.sub(r'-[A-Za-z]+(?=/)', '', numero)
+
+        # Remove hífens intermediários com número (ex: 561-1/2025 → 561/2025)
+        numero = re.sub(r'-(\d+)(?=/)', '', numero)
+
+        # Remove letras no final antes da barra (ex: 2325PE/2025 → 2325/2025)
+        numero = re.sub(r'([0-9])([A-Za-z]+)(?=/)', r'\1', numero)
+
+        return numero.strip()
+
+    return None
+  
+def extrair_texto(texto, chave):
+    """Extrai o valor associado a uma chave no texto."""
+    try:
+        return texto.split(chave)[1].split('\n')[0].strip().replace("'", "")
+    except IndexError:
+        return None
+
+def extrair_dados_nova_pagina(driver, edital):
+    tentativas = 2 
+    for tentativa in range(tentativas):               
+        try: 
+            driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
+            driver.switch_to.window(driver.window_handles[-1])
+            elementos_nova_pagina = WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.XPATH, '//div[@id="main-content"]/pncp-item-detail/div'))
+            )
+            texto = elementos_nova_pagina[0].text
+            match = re.search(r'de\s+(\d+)\s+itens', texto)
+            numero_itens = match.group(1) if match else '0'
+            data_fim_recebimento_str = extrair_data_com_horario(texto, 'Data fim de recebimento de propostas: ') or None
+            data_fim = None
+            hora_fim = None
+
+            if data_fim_recebimento_str:
+                partes = data_fim_recebimento_str.split(" ")
+                if len(partes) == 2:
+                    data_fim, hora_fim = partes
+                    
+            novos_campos = {
+                'DataInicioRecebimentoProposta': extrair_data_com_horario(texto, 'Data de início de recebimento de propostas: ') or None,
+                'DataFimRecebimentoProposta': data_fim_recebimento_str,
+                'CodigoUnidadeCompradora': extrair_codigo_unidade_compradora(texto),
+                'ModoDeDisputa': extrair_texto(texto, 'Modo de disputa: '),
+                'Situacao':extrair_texto(texto, 'Situação: '),
+                "DataFim": data_fim,
+                "HoraFim": hora_fim,
+            }
+               
+            button = "Acessar Contratação" in texto
+            
+            #pega o VALOR ESTIMADO, se vir RS 0,00 coloca SEM ESTIMADO
+            elemento_valor_total = elementos_nova_pagina[0].find_elements(By.XPATH, './/div[8]') 
+            if elemento_valor_total:
+                texto = elemento_valor_total[0].text
+                valor_total_estimado =  extrair_texto(texto, 'VALOR TOTAL ESTIMADO DA COMPRA\n') or None
+                if valor_total_estimado:
+                    if valor_total_estimado.strip() not in ['0,00', '0.00', '0', 'R$ 0,00']:
+                        novos_campos['ValorTotalEstimadoCompra'] = valor_total_estimado
+                    else:
+                        novos_campos['ValorTotalEstimadoCompra'] = 'SEM ESTIMADO'
+                else:
+                    elemento_valor_total_2 = elementos_nova_pagina[0].find_elements(By.XPATH, './/div[9]')
+                    texto = elemento_valor_total_2[0].text
+                    valor_total_estimado = extrair_texto(texto, 'VALOR TOTAL ESTIMADO DA COMPRA\n') or None
+                    if valor_total_estimado and valor_total_estimado.strip() not in ['0,00', '0.00', '0', 'R$ 0,00']:
+                        novos_campos['ValorTotalEstimadoCompra'] = valor_total_estimado
+                    else:
+                        novos_campos['ValorTotalEstimadoCompra'] = 'SEM ESTIMADO'
+            
+            # Caso o numero de itens no texto inicial não é econtrado tenta em outro parte do html
+            if numero_itens == '0':
+                elemento_itens = elementos_nova_pagina[0].find_element(By.XPATH, './/pncp-tab-set/div/pncp-tab[1]/div/div/pncp-table/div/ngx-datatable/div/datatable-footer/div/pncp-pagination-table/div/div[3]')
+                texto = elemento_itens.text
+                match = re.search(r'de\s+(\d+)\s+itens', texto)
+                numero_itens = match.group(1) if match else '0'
+                novos_campos['QuantidadeItens'] = numero_itens
+            else:
+                novos_campos['QuantidadeItens'] = numero_itens
+            
+            # tenta abrir o link do botão em nova aba e capturar a URL
+            link = None
+            if button:
+                try:
+                    botao = elementos_nova_pagina[0].find_element(By.XPATH, './/div[1]/div[2]/div/button')
+                    
+                    janela_antes = driver.window_handles
+                    botao.click()
+
+                    WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(janela_antes))
+                    nova_janela = [w for w in driver.window_handles if w not in janela_antes][0]
+                    driver.switch_to.window(nova_janela)
+
+                    link = driver.current_url
+
+                    driver.close()
+                    driver.switch_to.window(janela_antes[-1])
+
+                except NoSuchElementException:
+                    pass
+                except TimeoutException:
+                    print("Timeout esperando mudança após clique no botão\n")
+                except Exception as e:
+                    print("Erro ao tentar abrir link do botão:", e)
+
+            if link:
+                novos_campos['LinkBotao'] = link
+                
+            return novos_campos 
+        
+        except Exception as e:
+            if tentativa < tentativas - 1:
+                print(f"Erro na tentativa extrair_dados_nova_pagina {tentativa + 1}: Tentando novamente...\n")
+                time.sleep(0.5)  
+            else:
+                print(f"Erro final em extrair_dados_nova_pagina: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
+                logs.error(f"Erro final em extrair_dados_nova_pagina: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
+                logs.error(traceback.format_exc())
+                string_error = type(e).__name__
+                return string_error
+            
+        finally:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+            
+    return []
+        
+                   
+         
+def extrair_data_com_horario(texto, chave):
+    """Extrai a data e horário, removendo apenas '(horário de Brasília)'."""
+    valor = extrair_texto(texto, chave)
+    if valor:
+        return re.sub(r'\s*\(horário de Brasília\)', '', valor)  # Remove apenas essa parte
+    return None
+
+def extrair_codigo_unidade_compradora(texto):
+    """Extrai apenas o código antes do hífen da unidade compradora."""
+    valor = extrair_texto(texto, 'Unidade compradora: ')
+    if valor:
+        return valor.split(' - ')[0]  # Pega apenas o código antes do hífen
+    return None
+                      
+def acao_baixar_arquivo(driver, edital, plataforma):
+    tentativas = 4
+    for tentativa in range(tentativas):
+        try:
+            driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
+            driver.switch_to.window(driver.window_handles[-1])
+            # Espera até que o elemento pai esteja presente
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller'))
+            )
+
+            # Espera até que pelo menos um row apareça
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper"))
+            )
+            
+            elemento = driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
+            rows = elemento.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
+            arquivos =[]
+            for row in rows:
+                try:
+                    nome = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(1) span").get_attribute("innerText").strip()
+                except:
+                    nome = ""
+
+                try:
+                    data = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(2) div").get_attribute("innerText").strip()
+                except:
+                    data = ""
+
+                try:
+                    tipo = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(3) span").get_attribute("innerText").strip()
+                except:
+                    tipo = ""
+
+                try:
+                    link = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(4) a").get_attribute("href")
+                except:
+                    link = ""
+                    
+                arquivos.append({
+                    "nome": nome,
+                    "data": data,
+                    "tipo": tipo,
+                    "link": link
+                })
+                
+            arquivos_baixados = salvar_arquivos(arquivos, edital, plataforma)
+            
+        except Exception as e:
+            if tentativa < tentativas - 1:
+                print(f"Erro na tentativa acao_baixar_arquivo {tentativa + 1}: Tentando novamente...\n")
+                print(traceback.format_exc())
+                time.sleep(2)  
+            else:
+                print(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
+                logs.error(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: {str(e)} edital link:",  edital["Link"] ,"\n")
+                logs.error(traceback.format_exc())
+                return None 
+            
+        finally:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])  
+    
+        if tentativa >= 1:
+            return arquivos_baixados
+    return None
+           
+             
+def salvar_arquivos(arquivos, edital, plataforma):
+    try:
+        pasta_edital, pasta_dia, pasta_compridos = obter_caminho_edital(edital, plataforma)
+
+        # Criar apenas a pasta do dia se a base já existir
+        if not os.path.exists(pasta_dia):
+            os.makedirs(pasta_dia)  # Criar toda a estrutura
+            print(f"Criado diretório base: {pasta_dia}\n")
+        if not os.path.exists(pasta_edital):
+            os.makedirs(pasta_edital)  # Criar apenas a pasta do dia
+            print(f"Criado diretório para data {pasta_edital}\n")
+            
+        arquivos_baixados = 0
+        quantidadeTipoEdital = sum(1 for arquivo in arquivos if arquivo.get("tipo").lower() == "edital")
+      
+        for arquivo in arquivos:
+            tipo = arquivo.get("tipo")
+            nome_bruto = str(arquivo.get("nome", "Desconhecido")).strip()
+            nome_limpo = re.sub(r'[\\/:*?"<>|]', '_', nome_bruto)
+        
+            max_tentativas = 2
+            for tentativa in range(1, max_tentativas + 1):
+                link = arquivo.get("link", "").strip()
+                if not link:
+                    print(f"Link de download vazio, ignorando arquivo. Edital link - ", edital["Link"])
+                    logs.error(f"Link de download vazio, ignorando arquivo. Edital link - ", edital["Link"])
+                    continue  # se estiver em um loop, ou return/break conforme necessário
+    
+                response = requests.get(arquivo["link"], stream=True)
+                if response.status_code == 200:
+                    # Usa o nome original ou gera com base no tipo
+                    base_nome, ext = obter_extensao_response(response, nome_limpo)
+                    
+                    if not base_nome:
+                        base_nome = nome_limpo.replace('.', '-')
+                    else:
+                        base_nome = base_nome.replace('.', '-')
+                        
+                    if "edital" in tipo.lower():
+                        if quantidadeTipoEdital > 1:
+                            nome_arquivo = f"1-{base_nome}{ext}"
+                        else:
+                            nome_arquivo = f"1-Edital{ext}"
+                    else:
+                        nome_arquivo = f"{base_nome}{ext}"
+
+                    caminho_completo = os.path.join(pasta_edital, nome_arquivo)
+                    caminho_em_compactados = os.path.join(pasta_edital, 'compactados', nome_arquivo)
+                    
+                    if os.path.exists(caminho_completo) or os.path.exists(caminho_em_compactados):
+                        if os.path.exists(caminho_completo):
+                            print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_completo}.\n")
+                        if os.path.exists(caminho_em_compactados):
+                             print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_em_compactados}.\n")  
+                        break
+                    else:
+                        with open(caminho_completo, "wb") as file:
+                            shutil.copyfileobj(response.raw, file)
+                        arquivos_baixados += 1
+                        print(f"Arquivo salvo: {caminho_completo}\n")
+                        logs.info(f"Arquivo salvo: {caminho_completo}\n")
+                        
+                        executar_verificacao_arquivos(caminho_completo, ext, pasta_edital, nome_arquivo)
+                        break
+                
+                else:
+                    print(f"Tentativa {tentativa} falhou ao baixar: {arquivo['link']}\n")
+                    logs.error(f"Tentativa {tentativa} falhou ao baixar: {arquivo['link']}\n")
+                    if tentativa == max_tentativas:
+                        print(f"Erro final ao baixar {arquivo['link']}\n")
+                        logs.error(f"Erro final ao baixar arquivo: {arquivo['link']}\n")
+                                     
+        compactar_arquivos(pasta_edital, pasta_compridos)
+                        
+    except Exception as e:
+        logs.error("Erro ao salvar arquivos - ", str(e))
+
+def compactar_arquivos(pasta_edital, pasta_compridos):
+    try:
+        nome_pasta = os.path.basename(pasta_edital)
+        zip_path = os.path.join(pasta_compridos, f"{nome_pasta}.zip")
+
+        # Cria o destino, se não existir
+        if not os.path.exists(pasta_compridos):
+            os.makedirs(pasta_compridos)
+
+        if os.path.exists(zip_path):
+            print(f"O arquivo {nome_pasta}.zip já existe no caminho {zip_path}.")
+            return
+            
+        # Remove a pasta "compactados" de dentro da origem, se existir
+        #caminho_compactados = os.path.join(pasta_edital, 'compactados')
+        #if os.path.exists(caminho_compactados):
+            #shutil.rmtree(caminho_compactados)
+
+        # Conta os arquivos, ignorando a pasta "compactados"
+        total_arquivos = 0
+        for raiz, _, arquivos in os.walk(pasta_edital):
+            if 'compactados' in raiz:
+                continue
+            total_arquivos += len(arquivos)
+
+        if total_arquivos <= 1:
+            print(f"Não há mais de 1 arquivo em '{pasta_edital}', não será compactado.")
+            return
+        
+        # Cria o arquivo ZIP
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for raiz, _, arquivos in os.walk(pasta_edital):
+                if 'compactados' in raiz:
+                    continue
+                for arquivo in arquivos:
+                    caminho_completo = os.path.join(raiz, arquivo)
+                    caminho_relativo = os.path.relpath(caminho_completo, pasta_edital)
+                    zipf.write(caminho_completo, arcname=caminho_relativo)
+
+        print(f"Pasta '{pasta_edital}' compactada como '{zip_path}'.")
+        logs.info(f"Pasta '{pasta_edital}' compactada como '{zip_path}'")
+                
+    except Exception as e:
+        logs.error(f"Erro ao compactar arquivos, error: {str(e)}")
+
+def obter_extensao_response(response, nome_limpo):
+    try:
+        # Lista de extensões conhecidas
+        extensoes_validas = configuracoes.get("extensoes_validas")
+        
+        # 1.Verifica se nome do arquivo ja termina com extensão válida
+        tem_extensao_valida = any(nome_limpo.lower().endswith(ext) for ext in extensoes_validas)
+        if tem_extensao_valida:
+            base, ext = os.path.splitext(nome_limpo)
+            return base, ext.lower()
+        
+        # 2. Verifica se vem no Content-Disposition
+        cd = response.headers.get("Content-Disposition")
+        if cd:
+            match = re.findall('filename="?([^"]+)"?', cd)
+            if match:
+                _, ext = os.path.splitext(match[0])
+                if ext:
+                    return None, ext.lower()
+
+        # 3. Tenta adivinhar via mimetype
+        content_type = response.headers.get("Content-Type")
+        if content_type:
+            ext = mimetypes.guess_extension(content_type.split(";")[0].strip())
+            if ext:
+                return None, ext.lower()
+
+        # 4. Usa .pdf como fallback
+        return None, ".pdf"
+    
+    except Exception as e:
+        logs.error("Erro ao obter_extensao_response arquivos - ", str(e))
+        return None, ".pdf"
+
+def obter_caminho_edital(edital, plataforma):
+    locale.setlocale(locale.LC_TIME, "Portuguese_Brazil.1252")
+    
+    # Obter datas
+    dia = datetime.today().strftime("%Y-%m-%d")
+    dia_obra = datetime.today().strftime("%m.%d")
+    ano_atual = datetime.today().strftime("%Y")
+    mes_atual = datetime.today().strftime("%B").capitalize()
+    mes_atual = mes_atual.upper()
+    
+    # Limpar caracteres inválidos do número do edital e nome do órgão
+    numero_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Numero", "Desconhecido")).strip())
+    orgao_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Orgao", "Desconhecido")).strip())
+    estado = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Uf", "Desconhecido")).strip())
+    
+    data_raw = str(edital.get("DataFim", dia_obra)).strip()
+    data_sem_ano = re.sub(r'/\d{4}$', '', data_raw)
+    data_obra = re.sub(r'[\\/:*?"<>|]', '.', data_sem_ano)
+    
+    pasta_downloads = configuracoes.get('pasta_downloads')
+    
+    # Caminho das pastas
+    pasta_dia = os.path.join(pasta_downloads, f"{ano_atual}/{mes_atual}/{dia}")
+    pasta_edital =""
+    
+    if plataforma == 'obra':
+        pasta_edital = os.path.join(pasta_dia, f"{data_obra} - {estado} - {orgao_edital}")      
+    else:
+        pasta_edital = os.path.join(pasta_dia, f"{numero_edital}-{orgao_edital}")
+       
+        
+    pasta_comprimidos = os.path.join(pasta_dia,"Arquivos Comprimidos")
+    
+    return pasta_edital, pasta_dia, pasta_comprimidos
+
+def comprimir_pdf(caminho_pdf):
+    try:
+        novo_pdf = f"{os.path.splitext(caminho_pdf)[0]}_comprimido.pdf"
+        args = [
+            "gs",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/screen",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={novo_pdf}",
+            caminho_pdf
+        ]
+        ghostscript.Ghostscript(*args)
+        print(f"PDF {caminho_pdf} comprimido e salvo como {novo_pdf}")
+        logs.info(f"PDF comprimido: {caminho_pdf}")
+        return novo_pdf      
+    except Exception as e:  
+        print(f"Erro ao comprimir {caminho_pdf} com Ghostscript: {e}")
+        logs.error(f"Erro ao comprimir {caminho_pdf}: {str(e)}")
+        return caminho_pdf
+
+
+def mover_campactados(caminho_compactado, pasta_edital,nome_arquivo):
+    # Mover o ZIP ou RAR original para a pasta 'compactados'   
+    pasta_compactados = os.path.join(pasta_edital, 'compactados')
+    if not os.path.exists(pasta_compactados):
+        os.makedirs(pasta_compactados, exist_ok=True)   
+    destino = os.path.join(pasta_compactados, nome_arquivo)
+    shutil.move(caminho_compactado, destino)
+    print(f"Arquivo compactado movido para: {destino}")
+    logs.info(f"Arquivo compactado movido para: {destino}")
+
+def mover_arquivos(caminho, pasta_edital):
+     # Verifica se é um diretório
+    if os.path.isdir(caminho):
+        # Move todos os arquivos de dentro do diretório para a pasta raiz
+        for raiz, _, arquivos in os.walk(caminho):
+            for arquivo in arquivos:
+                origem = os.path.join(raiz, arquivo)
+                destino = os.path.join(pasta_edital, arquivo)
+                shutil.move(origem, destino)  # Move o arquivo para a raiz
+
+        # Após mover, remove o diretório original vazio
+        shutil.rmtree(caminho)
+              
+def processar_arquivos_compactados(caminho_compactado, pasta_edital, nome_arquivo, ext):
+    try:
+        if ext == '.zip':
+            with zipfile.ZipFile(caminho_compactado, 'r') as zip_ref:
+                zip_ref.extractall(pasta_edital)
+                print(f"ZIP extraído para: {pasta_edital}")
+                logs.info(f"ZIP extraído: {caminho_compactado}")
+        elif ext == '.rar':
+            try:
+                unrar_path = configuracoes.get("UNRAR_TOOL")
+                rarfile.UNRAR_TOOL = unrar_path
+                with rarfile.RarFile(caminho_compactado, 'r') as rar_ref:
+                        rar_ref.extractall(pasta_edital)
+                        print(f"RAR extraído para: {pasta_edital}")
+                        logs.info(f"RAR extraído: {caminho_compactado}")
+            except rarfile.RarCannotExec as e:
+                print("Erro: 'unrar.exe' não encontrado.")
+                logs.error(f"Erro ao extrair RAR: {e}")
+                return
+        else:
+            print("Formato não suportado.")
+            logs.warning(f"Formato não suportado: {caminho_compactado}")
+            return
+
+        mover_campactados(caminho_compactado, pasta_edital, nome_arquivo)
+
+         # Primeira iteração: mover os diretórios
+        for item in list(os.listdir(pasta_edital)):
+            caminho_item = os.path.join(pasta_edital, item)
+            if os.path.isdir(caminho_item) and item != 'compactados':
+                mover_arquivos(caminho_item, pasta_edital)
+
+        # Segunda iteração: processar os arquivos agora que tudo está na raiz
+        for item in os.listdir(pasta_edital):
+            caminho_item = os.path.join(pasta_edital, item)
+            ext = os.path.splitext(item)[1].lower()
+            if item == 'compactados':
+                continue
+            executar_verificacao_arquivos(caminho_item, ext, pasta_edital, item)
+            
+    except zipfile.BadZipFile:
+        print(f"Erro: {nome_arquivo} não é um ZIP válido.")
+        logs.error(f"Erro ao extrair ZIP: {caminho_compactado}")
+    except rarfile.Error as e:
+        print(f"Erro ao extrair RAR: {e}")
+        logs.error(f"Erro ao extrair RAR: {caminho_compactado}")
+          
+def executar_verificacao_arquivos(caminho_completo, ext, pasta_edital, nome_arquivo):
+    try:
+        extensoes_imgs = configuracoes.get("extensoes_imgs", [])
+        extensoes_panilhas = configuracoes.get("extensoes_planilhas", [])
+        formatos_para_docx = configuracoes.get("formatos_para_docx", [])
+        if ext.lower() == ".zip" or ext.lower() == ".rar" :
+            processar_arquivos_compactados(caminho_completo, pasta_edital, nome_arquivo, ext)
+        elif ext.lower() == ".pdf":
+            verificacao_comprimir_arquivo(caminho_completo)         
+        elif ext.lower() in formatos_para_docx:
+            converter_para_docx(caminho_completo)   
+        elif ext.lower() in extensoes_imgs:
+            converter_para_pdf(nome_arquivo, pasta_edital)
+        elif ext.lower() in extensoes_panilhas:
+            converter_para_xlsx(caminho_completo)
+            
+    except Exception as e:
+        logs.error("Erro ao executar_verificacao_arquivos - ", str(e))
+
+
+def converter_para_xlsx(arquivo_origem):
+    nome_arquivo_sem_extensao, ext = os.path.splitext(arquivo_origem)
+    novo_arquivo_xlsx = f"{nome_arquivo_sem_extensao}.xlsx"
+
+    if ext == '.csv':
+        try:
+            df = pd.read_csv(arquivo_origem)
+            df.to_excel(novo_arquivo_xlsx, index=False)
+            print(f"Convertido para .xlsx: {arquivo_origem}")
+            logs.info(f"Convertido para .xlsx: {arquivo_origem}")
+        except pd.errors.EmptyDataError:
+            df = pd.DataFrame()
+            df.to_excel(novo_arquivo_xlsx, index=False)
+            print(f"Arquivo está vazio, mas foi convertido para .xlsx:{arquivo_origem}")
+            logs.info(f"Arquivo está vazio, mas foi convertido para .xlsx:{arquivo_origem}")
+        except Exception as e:
+            print(f"Erro ao converter {arquivo_origem}: {e}")
+    elif ext in ['.xlsm', '.ods']:
+        try:
+            df = pd.read_excel(arquivo_origem, engine='odf' if ext == '.ods' else None)
+            df.to_excel(novo_arquivo_xlsx, index=False)
+            print(f"Convertido para .xlsx:  {arquivo_origem}")
+            logs.info(f"Convertido para .xlsx:  {arquivo_origem}")
+        except Exception as e:
+            df = pd.DataFrame()
+            df.to_excel(novo_arquivo_xlsx, index=False)
+            print(f"Arquivo está vazio ou ocorreu um erro, mas foi convertido para .xlsx:  {arquivo_origem} - error: {e}")
+            logs.info(f"Arquivo está vazio ou ocorreu um erro, mas foi convertido para .xlsx:  {arquivo_origem} - error: {e}")
+            
+def converter_para_pdf(imagem, pasta_edital):
+        try:
+            img = Image.open(imagem).convert('RGB')
+            nome_arquivo_sem_extensao = os.path.splitext(os.path.basename(imagem))[0]
+            nome_arquivo_saida = os.path.join(pasta_edital, f"{nome_arquivo_sem_extensao}.pdf")
+            img.save(nome_arquivo_saida)
+            print(f"Convertido {imagem} para PDF em {nome_arquivo_saida}")
+            logs.info(f"Convertido {imagem} para PDF em {nome_arquivo_saida}")
+        except Exception as e:
+            print(f"Erro ao converter {imagem} para PDF: {e}")
+            logs.error(f"Erro ao converter {imagem} para PDF: {e}")
+
+
+def verificacao_comprimir_arquivo(caminho_completo):
+    limite_kb = configuracoes.get("limite_kb")
+    tamanho_arquivo = os.path.getsize(caminho_completo)
+    if tamanho_arquivo / 1024 > limite_kb:
+        comprimido = comprimir_pdf(caminho_completo)
+        tamanho_novo = os.path.getsize(comprimido)
+
+        if tamanho_novo / 1024 > limite_kb:
+            dividir_pdf_em_partes(comprimido, limite_kb)
+            
+def dividir_pdf_em_partes(caminho_pdf, limite_kb):
+    try:
+        reader = PdfReader(caminho_pdf)
+        total_paginas = len(reader.pages)
+        tamanho_total_kb = os.path.getsize(caminho_pdf) / 1024
+
+        partes_necessarias = math.ceil(tamanho_total_kb / limite_kb)
+        paginas_por_parte = total_paginas // partes_necessarias
+        
+        for i in range(partes_necessarias):
+            writer = PdfWriter()
+            
+            inicio = i * paginas_por_parte
+            fim = (i + 1) * paginas_por_parte if i < partes_necessarias - 1 else total_paginas
+
+            for j in range(inicio, fim):
+                writer.add_page(reader.pages[j])
+
+            caminho_parte = caminho_pdf.replace('.pdf', f'_parte{i+1}.pdf')
+            with open(caminho_parte, 'wb') as f:
+                writer.write(f)
+
+        # Exclui o arquivo original após a divisão
+        os.remove(caminho_pdf)
+        print(f"PDF {caminho_pdf} dividido em {partes_necessarias} parte(s) com sucesso.")
+        
+    except Exception as e:
+        print(f"Erro ao dividr pdf {caminho_pdf} erro: {e}")
+        logs.error(f"Erro ao dividr pdf {caminho_pdf} erro: {e}")
+   
+def converter_para_docx(arquivo_origem):
+    nome_arquivo_sem_extensao, ext = os.path.splitext(arquivo_origem)
+    novo_arquivo_docx = f"{nome_arquivo_sem_extensao}.docx"
+
+    try:
+        if ext.lower() == ".doc":
+            # Usa LibreOffice para converter .doc em .docx
+            subprocess.run([
+                "soffice", "--headless", "--convert-to", "docx", arquivo_origem, "--outdir", os.path.dirname(arquivo_origem)
+            ], check=True)
+            print(f"Convertido {arquivo_origem} para {novo_arquivo_docx} usando LibreOffice")
+            logs.info(f"Convertido {arquivo_origem} para {novo_arquivo_docx} usando LibreOffice")
+        else:
+            # Usa pypandoc para outros formatos válidos (ex: .md, .odt, .txt, etc)
+            pypandoc.convert_file(arquivo_origem, 'docx', outputfile=novo_arquivo_docx)
+            print(f"Convertido {arquivo_origem} para {novo_arquivo_docx} com Pandoc")
+            logs.info(f"Convertido {arquivo_origem} para {novo_arquivo_docx} com Pandoc")
+    except Exception as e:
+        print(f"Erro ao converter {arquivo_origem} para DOCX: {e}")
+        logs.error(f"Erro ao converter {arquivo_origem} para DOCX: {e}")
+        
+## PROCESSOS PARA LICITAÇÕES QUE JA EXISTEM EM BANCO DE DADOS   
+
+def executar_processos_alteracao(processo, notificacao_config):
+    try:   
+        ids_usuarios = notificacao_config['ids_usuarios']
+        plataforma = notificacao_config['plataforma']
+        urlBase =  notificacao_config['url']
+        driver = None
+        driver, profile_dir = criar_driver(mostrar_browser = False)
+        driver.get(urlBase)
+        
+        controles_iniciais(driver)
+        # Obter novos dados
+        novos_dados = extrair_dados_nova_pagina_alteracao(processo, driver)
+
+        # Garantir que dados_existentes seja uma lista ou dicionário
+        dados_existentes = retornar_edital_existente_by_plataforma(processo, plataforma)
+        dados_existentes = dados_existentes[0] if isinstance(dados_existentes, list) and dados_existentes else {}
+        dados_existentes.update(processo)
+        
+         # Mapeamento para normalizar chaves
+        mapeamento_chaves = {
+            'QuantidadeItens': 'quantidade_total_itens',
+            'DataFimRecebimentoProposta': 'data_fim_recebimento_proposta',
+            'CodigoUnidadeCompradora': 'codigo_unidade_compradora',
+            'Situação': 'situacao',
+            'ValorTotalEstimadoCompra': 'valor_total_estimado_compra',
+            'Numero': 'numero',
+            'IdContratacaoPncp': 'id_contratacao_pncp',
+            'Licitacao': 'licitacao',
+            'Orgao': 'orgao',
+            'Municipio': 'municipio',
+            'Uf': 'uf',
+            'Cnpj': 'cnpj',
+            'Link': 'link',
+        }
+        
+        novos_dados_filtrados = {
+        mapeamento_chaves[k]: v for k, v in novos_dados.items() if k in mapeamento_chaves
+        }
+
+        dados_existentes_filtrados = {
+         k: v for k, v in dados_existentes.items() if k in mapeamento_chaves.values()
+        }
+
+        # Normalizar as chaves para comparação
+        novos_dados_normalizados = {k.lower(): v for k, v in novos_dados_filtrados.items()}
+        dados_existentes_normalizados = {k.lower(): v for k, v in dados_existentes_filtrados.items()}
+
+      # Ajustar o CNPJ antes da comparação
+        if 'cnpj' in novos_dados_normalizados:
+            novos_dados_normalizados['cnpj'] = limpar_cnpj(novos_dados_normalizados['cnpj'])
+        if 'cnpj' in dados_existentes_normalizados:
+            dados_existentes_normalizados['cnpj'] = limpar_cnpj(dados_existentes_normalizados['cnpj'])
+            
+            
+        alteracoes = {
+            chave: {"antes": valor_existente, "depois": novo_valor}
+            for chave, novo_valor in novos_dados_normalizados.items()
+            if (valor_existente := dados_existentes_normalizados.get(chave)) != novo_valor
+        }
+
+        arquivos_baixados = acao_baixar_arquivo_alteracao(processo, driver)
+        if arquivos_baixados > 0:
+            alteracoes["status_processo_arquivos"] = "Novos arquivos encontrados"
+            alteracoes["arquivosBaixados"] = arquivos_baixados
+        
+        if alteracoes:
+           edital = gravar_alteracao_processo(alteracoes, dados_existentes)
+            
+        if alteracoes or arquivos_baixados > 0:
+            edital.update(novos_dados)
+            ##enviar_mensagem(edital, ids_usuarios, novo_processo=False, plataforma=plataforma)
+            
+        if alteracoes:     
+          return{"resultado": edital}
+        else:
+            print("Nenhuma alteração detectada.")
+
+    except Exception as e:
+        print(f"Erro ao executar os processos de alteração: {e}")
+  
+    
+def extrair_dados_nova_pagina_alteracao(editeditalalteracaoal, driver): 
+    tentativas = 4
+    try:  
+        driver.execute_script("window.open(arguments[0], '_blank');", editeditalalteracaoal["link"])
+        driver.switch_to.window(driver.window_handles[-1])
+        
+        for tentativa in range(tentativas):    
+            try:
+                elementos_nova_pagina = driver.find_elements(By.XPATH, '//div[@id="main-content"]/pncp-item-detail/div')
+                texto = elementos_nova_pagina[0].text
+                match = re.search(r'(\d+)\s+itens', texto)
+                numero_itens = match.group(1) if match else '0'
+                id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
+                
+                novos_campos = {
+                    'QuantidadeItens': numero_itens,
+                    'DataInicioRecebimentoProposta': extrair_data_com_horario(texto, 'Data de início de recebimento de propostas: ') or None,
+                    'DataFimRecebimentoProposta': extrair_data_com_horario(texto, 'Data fim de recebimento de propostas: ') or None,
+                    'CodigoUnidadeCompradora': extrair_codigo_unidade_compradora(texto),
+                    'ModoDeDisputa': extrair_texto(texto, 'Modo de disputa: '),
+                    'Tipo': extrair_texto(texto, 'Tipo: '),
+                    'Situacao':extrair_texto(texto, 'Situação: '),
+                    'Numero': f"{int(id_aux.split('-')[2].split('/')[0])}/{id_aux.split('/')[-1]}",
+                    'IdContratacaoPncp': id_aux,
+                    'Licitacao': extrair_texto(texto, 'Modalidade da Contratação: '),
+                    'Data': extrair_texto(texto, 'Última Atualização: '),
+                    'Orgao': extrair_texto(texto, 'Órgão: '),
+                    'Municipio': extrair_texto(texto, 'Local: '),
+                    'Uf': extrair_texto(texto, 'Local: ').split('/')[1],
+                    'Descricao': extrair_texto(texto, 'Objeto:'),
+                    'Cnpj': id_aux.split('-')[0],
+                }
+                
+                button = "Acessar Contratação" in texto
+            
+                elemento_valor_total = elementos_nova_pagina[0].find_elements(By.XPATH, './/div[8]')
+            
+                if elemento_valor_total:
+                    texto = elemento_valor_total[0].text
+                    novos_campos['ValorTotalEstimadoCompra'] = extrair_texto(texto, 'VALOR TOTAL ESTIMADO DA COMPRA\n')
+                    
+                  # Só agora, no final, tenta abrir o link do botão em nova aba e capturar a URL
+                link = None
+                
+                if button:
+                    try:
+                        botao = elementos_nova_pagina[0].find_element(By.XPATH, './/div[1]/div[2]/div/button')
+                        
+                        janela_antes = driver.window_handles
+                        botao.click()
+
+                        WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(janela_antes))
+                        nova_janela = [w for w in driver.window_handles if w not in janela_antes][0]
+                        driver.switch_to.window(nova_janela)
+
+                        link = driver.current_url
+
+                        driver.close()
+                        driver.switch_to.window(janela_antes[-1])
+
+                    except NoSuchElementException:
+                        pass
+                    except TimeoutException:
+                        print("Timeout esperando mudança após clique no botão")
+                    except Exception as e:
+                        print("Erro ao tentar abrir link do botão:", e)
+
+                if link:
+                    novos_campos['LinkBotao'] = link
+                            
+            
+            except Exception as e:
+                if tentativa < tentativas - 1:
+                    print(f"Erro na tentativa extrair_dados_nova_pagina_alteracao {tentativa + 1}: {e}. Tentando novamente...")
+                    time.sleep(2)  
+                else:
+                    print(f"Erro na tentativa extrair_dados_nova_pagina_alteracao final: {e}")
+                    return None     
+            
+            finally:
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])    
+            
+            return novos_campos
+ 
+    except Exception as e:
+        logs.error("extrair_dados_nova_pagina_alteracao error pegar dados arquivos - ", str(e))
+       
+         
+def acao_baixar_arquivo_alteracao(edital, driver):
+    tentativas = 2
+    for tentativa in range(tentativas):
+     try:
+        driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
+        driver.switch_to.window(driver.window_handles[-1])
+        
+        try:
+            elemento = driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
+            rows = elemento.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
+            arquivos =[]
+            for row in rows:
+                nome = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(1) span").get_attribute("innerText").strip()
+                data = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(2) div").get_attribute("innerText").strip()
+                tipo = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(3) span").get_attribute("innerText").strip()
+                link = row.find_element(By.CSS_SELECTOR, "datatable-body-cell:nth-child(4) a").get_attribute("href")
+                arquivos.append({
+                 "nome": nome,
+                 "data": data,
+                 "tipo": tipo,
+                 "link": link
+                })
+                      
+            arquivos_baixados = salvar_arquivos_alteracao(arquivos, edital)
+             
+        except Exception as dArq:
+                logs.error("Erro acao_baixar_arquivo_alteracao - ", str(dArq))
+        finally:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])  
+            
+        return arquivos_baixados 
+    
+     except Exception as dArq:
+        if tentativa < tentativas - 1:
+            print(f"Erro na tentativa acao_baixar_arquivo_alteracao {tentativa + 1}: {dArq}. Tentando novamente...")
+            time.sleep(2) 
+        else: 
+            logs.error("Erro na tentativa acao_baixar_arquivo_alteracao final - ", str(dArq))
+            return 0  # Retorna 0 se ocorrer error
+        
+             
+def salvar_arquivos_alteracao(arquivos, edital):
+    try:
+        locale.setlocale(locale.LC_TIME, "Portuguese_Brazil.1252")
+        # Obter datas
+        hoje = datetime.today().strftime("%Y-%m-%d")
+        ano_atual = datetime.today().strftime("%Y")
+        mes_atual = datetime.today().strftime("%B").capitalize() 
+       
+        # Limpar caracteres inválidos do número do edital e nome do órgão
+        numero_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Numero", "Desconhecido")).strip())
+        orgao_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Orgao", "Desconhecido")).strip())
+           
+        pasta_downloads = str(Path.home() / "Downloads")
+        # Caminho base do edital
+        pasta_base = os.path.join(pasta_downloads, f"SEGURO/{ano_atual}/{mes_atual}/Edital{numero_edital}.{orgao_edital}")
+        pasta_data = os.path.join(pasta_base, hoje)
+        
+        # Criar apenas a pasta do dia se a base já existir
+        if not os.path.exists(pasta_base):
+            os.makedirs(pasta_base)  # Criar toda a estrutura
+            print(f"Criado diretório base: {pasta_base}")
+        if not os.path.exists(pasta_data):
+            os.makedirs(pasta_data)  # Criar apenas a pasta do dia
+            print(f"Criado diretório para data {hoje}")
+            
+        arquivos_existentes = [f for f in os.listdir(pasta_data) if f.endswith(".pdf")]
+
+        existeTipoEdital = False
+       
+        for arquivo in arquivos_existentes:
+            match = re.match(r"(\d+)-", arquivo)  # Captura o número antes do "-"
+            if match:
+                numero = int(match.group(1))
+                if numero == 1:
+                    existeTipoEdital = True
+               
+        quantidade = sum(1 for arquivo in arquivos if arquivo.get("tipo") == "edital")
+        arquivos_baixados = 0
+        
+        for arquivo in arquivos:
+            tipo = arquivo.get("tipo")
+            nome = re.sub(r'[\\/:*?"<>|]', '_', str(arquivo.get("nome", "Desconhecido")).strip())  
+             
+            if "edital" in tipo.lower(): 
+                if quantidade > 1 or existeTipoEdital:   
+                    nome_arquivo = f"1-{nome}.pdf"
+                else:
+                    nome_arquivo = f"1-Edital.pdf"                
+            else:
+                nome_arquivo = f"{nome}.pdf"
+                
+            caminho_completo = os.path.join(pasta_data, nome_arquivo)
+            
+            if os.path.exists(caminho_completo):
+                print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_completo}.")
+            else:
+            # Baixar o arquivo
+                response = requests.get(arquivo["link"], stream=True)
+                if response.status_code == 200:
+                    with open(caminho_completo, "wb") as file:
+                        shutil.copyfileobj(response.raw, file)
+                    arquivos_baixados += 1
+                    print(f"Arquivo salvo: {caminho_completo}")
+                else:
+                    print(f"Erro ao baixar {arquivo['link']}")
+                    
+        return arquivos_baixados  # Retorna a quantidade de arquivos baixados            
+
+    except Exception as e:
+        logs.error("Erro ao salvar arquivos - ", str(e))
+        return 0  # Retorna 0 em caso de error
