@@ -37,7 +37,18 @@ configuracoes = {
     "processar_todos_obra": True,
     "processar_todos_pintura": True,
     "processar_todos_reforma": True,
-    "processar_dia": True
+    "processar_dia": True,
+    "mafre":{
+        "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
+        "user": "",
+        "password": "",
+        "palavras_arquivos_exececoes": [
+            "anexo",
+            "termo",
+            "relacao"
+        ]
+    }
 }
 
 CAMINHO_CONFIG = "config.json"

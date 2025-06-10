@@ -7,11 +7,11 @@
         "port": 3306,
         "user": "root",
         "password": "217799",
-        "database": "gnpobras"
+        "database": "gnpnew"
     },
     "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
-    "pasta_downloads": "C:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/OBRA/",
-    "raiz_local": "C:/PROGRAMAS GNP",
+    "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/SEGURO/",
+    "raiz_local": "D:/PROGRAMAS GNP",
     "raiz_server": "//Killer",
     "extensoes_imgs": [
         ".jpeg",
@@ -51,6 +51,16 @@
     "processar_todos_obra": false,
     "processar_todos_pintura": false,
     "processar_todos_reforma": false,
-    "processar_dia": true
-    
+    "processar_dia": true,
+    "mafre":{
+        "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
+        "user": "GNP",
+        "password": "cli130@",
+        "palavras_arquivos_exececoes": [
+            "anexo",
+            "termo",
+            "relacao"
+        ]
+    }
 }
