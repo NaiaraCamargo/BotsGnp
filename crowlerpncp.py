@@ -280,12 +280,13 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
             edital["pasta_comprimidos"] = pasta_killer_comprimidos
             print(f"\nProcessando: {edital}\n") 
             
-            inicializar_pagina_mafre()
+            ##acao_baixar_arquivo(driver, edital, plataforma) 
+            
+            inicializar_pagina_mafre(edital)
             
             if plataforma == "obra" and edital["Uf"].upper() == "RS" or plataforma == "pncp":
                 enviar_mensagem(edital, ids_usuarios, novo_processo=True)         
                 
-            acao_baixar_arquivo(driver, edital, plataforma) 
             gravar_novo_processo(edital, plataforma)                                 
             lista_planilha.append(copy.deepcopy(edital))
                                 
@@ -494,7 +495,7 @@ def extrair_dados_nova_pagina(driver, edital):
         try: 
             driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
             driver.switch_to.window(driver.window_handles[-1])
-            elementos_nova_pagina = WebDriverWait(driver, 10).until(
+            elementos_nova_pagina = WebDriverWait(driver, 40).until(
                 EC.presence_of_all_elements_located((By.XPATH, '//div[@id="main-content"]/pncp-item-detail/div'))
             )
             texto = elementos_nova_pagina[0].text
@@ -559,7 +560,7 @@ def extrair_dados_nova_pagina(driver, edital):
                     janela_antes = driver.window_handles
                     botao.click()
 
-                    WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(janela_antes))
+                    WebDriverWait(driver, 30).until(lambda d: len(d.window_handles) > len(janela_antes))
                     nova_janela = [w for w in driver.window_handles if w not in janela_antes][0]
                     driver.switch_to.window(nova_janela)
 
@@ -587,7 +588,6 @@ def extrair_dados_nova_pagina(driver, edital):
             else:
                 print(f"Erro final em extrair_dados_nova_pagina: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
                 logs.error(f"Erro final em extrair_dados_nova_pagina: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
-                logs.error(traceback.format_exc())
                 string_error = type(e).__name__
                 return string_error
             
@@ -620,12 +620,12 @@ def acao_baixar_arquivo(driver, edital, plataforma):
             driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
             driver.switch_to.window(driver.window_handles[-1])
             # Espera até que o elemento pai esteja presente
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 40).until(
                 EC.presence_of_element_located((By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller'))
             )
 
             # Espera até que pelo menos um row apareça
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 40).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper"))
             )
             
@@ -670,7 +670,6 @@ def acao_baixar_arquivo(driver, edital, plataforma):
             else:
                 print(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
                 logs.error(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: {str(e)} edital link:",  edital["Link"] ,"\n")
-                logs.error(traceback.format_exc())
                 return None 
             
         finally:
@@ -1224,7 +1223,7 @@ def extrair_dados_nova_pagina_alteracao(editeditalalteracaoal, driver):
                         janela_antes = driver.window_handles
                         botao.click()
 
-                        WebDriverWait(driver, 10).until(lambda d: len(d.window_handles) > len(janela_antes))
+                        WebDriverWait(driver, 20).until(lambda d: len(d.window_handles) > len(janela_antes))
                         nova_janela = [w for w in driver.window_handles if w not in janela_antes][0]
                         driver.switch_to.window(nova_janela)
 
