@@ -73,7 +73,7 @@ def encerrar_driver_com_timeout(driver, timeout=5):
         try:
             driver.quit()
         except Exception as e:
-            logs.warning(f"[AVISO] Erro ao tentar fechar o driver: {e}")
+            logs.warning(f"[AVISO] Erro ao tentar fechar o driver")
     t = threading.Thread(target=target, daemon=True)
     t.start()
     t.join(timeout)
@@ -96,13 +96,10 @@ def criar_driver(mostrar_browser=False):
     try:
         driver = iniciar_driver_thread(chrome_options)
     except Exception as e1:
-        logs.error(f"[CRITICAL] Erro ao iniciar Chrome via PATH: {e1}")
         # Segunda tentativa: baixar e usar ChromeDriver com timeout
         try:
             driver = iniciar_driver_thread(chrome_options, usar_opcao2=True)
         except Exception as e2:
-            logs.error(f"[FATAL] Falha ao baixar/iniciar ChromeDriver: {e2}")
-            logs.debug(traceback.format_exc())
             shutil.rmtree(profile_dir, ignore_errors=True)
             raise RuntimeError(f"Falha total ao iniciar o ChromeDriver: {e2}") from e2
 
@@ -124,6 +121,5 @@ def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
             url = url_base
         driver.get(url)
     except Exception as e:
-        logs.warning(f"Erro ao acessar a URL '{url_base}': {e}. Tentando novamente...")
         time.sleep(0.2)
         raise

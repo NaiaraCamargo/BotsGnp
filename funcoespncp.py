@@ -41,6 +41,7 @@ configuracoes = {
     "mafre":{
         "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
         "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
+        "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=&p=consultaGeral.aspx",
         "user": "",
         "password": "",
         "palavras_arquivos_exececoes": [
@@ -288,7 +289,7 @@ def formatar_data(data="", limpar=True, padrao="universal"):
         return ""
 
 
-def cnpj(cnpj):
+def cnpj_formatado(cnpj):
     if len(cnpj) == 14:
         return cnpj[:2] + "." + cnpj[2:5] + "." + cnpj[5:8] + "/" + cnpj[8:12] + "-" + cnpj[12:]
 
@@ -340,7 +341,7 @@ def formatar_mensagem_pncp(msg_dict, erro):
         if "Licitacao" in msg_dict:
             nova_msg += f"<b>LICITAÇÃO:</b> <code>{html.escape(str(msg_dict['Licitacao']))}</code>\n\n"
         if "Cnpj" in msg_dict:
-            msg_dict['Cnpj'] = cnpj(msg_dict.get("Cnpj", ""))
+            msg_dict['Cnpj'] = cnpj_formatado(msg_dict.get("Cnpj", ""))
             nova_msg += f"<b>CNPJ:</b> <code>{html.escape(str(msg_dict['Cnpj']))}</code>\n\n"
         if "Orgao" in msg_dict:
             nova_msg += f"<b>ORGÃO:</b> <code>{html.escape(str(msg_dict['Orgao']))}</code>\n\n"
@@ -386,6 +387,29 @@ def formatar_mensagem_pncp(msg_dict, erro):
         if "LinkBotao" in msg_dict:
             nova_msg += f"<b>LINK AUXILIAR:</b> {html.escape(str(msg_dict['LinkBotao']))}\n\n"
 
+        #Reservas
+        # Monta as reservas normais, do tipo 'reserva', 'reserva_2', 'reserva_3', ...
+        for chave in sorted(msg_dict.keys()):
+            m = re.fullmatch(r"link_reserva_(\d+)", chave)
+            if m:
+                numero = m.group(1)
+                label = f"Reserva {numero}"
+                nova_msg += f"<b>{label}:</b> {html.escape(str(msg_dict[chave]))}\n\n"
+
+        # Monta as reservas perdidas, do tipo 'reserva_perdida', 'reserva_perdida_2', 'reserva_perdida_3', ...
+        for chave in sorted(msg_dict.keys()):
+            m = re.fullmatch(r"reserva_perdida(_(\d+))?", chave)
+            if m:
+                numero = m.group(2)
+                label = f"Reserva Perdida" if numero is None else f"Reserva Perdida {numero}"
+                nova_msg += f"<b>{label}:</b> {html.escape(str(msg_dict[chave]))}\n\n"
+                
+        if "aviso_reserva" in msg_dict:
+            aviso = str(msg_dict["aviso_reserva"]).strip()
+            aviso = html.escape(aviso)  # Escapa caracteres especiais HTML
+            nova_msg += f"<b>⚠️ AVISO RESERVA:</b> {aviso}\n\n"
+         
+            
         # Descrição
         if "Descricao" in msg_dict:
             nova_msg += f"<b>DESCRIÇÃO:</b> {str(msg_dict['Descricao'])}\n\n"

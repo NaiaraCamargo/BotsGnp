@@ -36,7 +36,7 @@ from urllib.parse import urlparse, parse_qs
 # Imports de módulos locais
 from funcoespncp import *
 from gerar_planilha import *
-from mapfre import inicializar_pagina_mafre
+from mapfre import inicializar_pagina_mafre, validar_criar_reserva
 from repositoriopncp import *
 from drivers import *
 
@@ -280,12 +280,47 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
             edital["pasta_comprimidos"] = pasta_killer_comprimidos
             print(f"\nProcessando: {edital}\n") 
             
-            ##acao_baixar_arquivo(driver, edital, plataforma) 
-            
-            inicializar_pagina_mafre(edital)
-            
-            if plataforma == "obra" and edital["Uf"].upper() == "RS" or plataforma == "pncp":
-                enviar_mensagem(edital, ids_usuarios, novo_processo=True)         
+            if plataforma == "obra":
+                if edital["Uf"].upper() == "RS":
+                    enviar_mensagem(edital, ids_usuarios, novo_processo=True)  # envia antes
+                acao_baixar_arquivo(driver, edital, plataforma)
+            elif plataforma == "pncp":
+                acao_baixar_arquivo(driver, edital, plataforma)
+                retorno, msg, ramos_valores = validar_criar_reserva(edital)
+                
+                if retorno == True:
+                    edital["ramos_valores"] = ramos_valores
+                    hora_antes_iniciar_reserva = datetime.now().strftime("%H:%M:%S")
+                    msg, ids = inicializar_pagina_mafre(edital)
+                   
+                    if "reserva já cadastrada" in msg.lower():
+                        for i, id_val in enumerate(ids, start=1):
+                            key = f"reserva_perdida_{i}" if i > 1 else "reserva_perdida"
+                            edital[key] = id_val
+                    if "sucesso" in msg.lower():
+                        for i, id_val in enumerate(ids, start=1):
+                            key = f"link_reserva_{i}"
+                            edital[key] = id_val
+                            match = re.search(r"reserva:\s*(\d+)", msg)
+                            if match:
+                                id_reserva = match.group(1)
+                                if "data inclusao" in msg.lower() and id_reserva == id_val:
+                                    match = re.search(r'data inclusao:\s*\d{2}/\d{2}/\d{4}\s+(\d{2}:\d{2}:\d{2})', msg.lower())
+                                    if match:
+                                        edital[f"horario_arq_anexado_{i}"] = match.group(1)
+                                        hora_anexo = match.group(1)
+                                        formato = "%H:%M:%S"
+                                        hora_inicio = datetime.strptime(hora_antes_iniciar_reserva, formato)
+                                        hora_termino = datetime.strptime(hora_anexo, formato)
+                                        # Calcula a diferença
+                                        diferenca = hora_termino - hora_inicio
+                                        edital[f"diferença_inicio_anexo_{i}"] = str(diferenca)
+                    if "erro" in msg.lower():
+                        edital["aviso_reserva"] = msg
+                else:
+                   edital["aviso_reserva"] = msg
+                   
+                enviar_mensagem(edital, ids_usuarios, novo_processo=True)  
                 
             gravar_novo_processo(edital, plataforma)                                 
             lista_planilha.append(copy.deepcopy(edital))
@@ -349,9 +384,10 @@ def limpar_para_mysql(texto):
     texto = unicodedata.normalize("NFKC", texto)  # Normaliza formas compostas para pré-compostas
     return texto
 
-def obter_pastas_download(edital,plataforma):
+def obter_pastas_download(edital, plataforma):
     try:
-        pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital,plataforma)
+        pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital, plataforma)
+        edital["pasta_edital_original"] = pasta_edital 
         raiz_local = configuracoes.get("raiz_local")
         raiz_server = configuracoes.get("raiz_server")
         pasta_killer = pasta_edital.replace(raiz_local, raiz_server)
@@ -615,20 +651,22 @@ def extrair_codigo_unidade_compradora(texto):
                       
 def acao_baixar_arquivo(driver, edital, plataforma):
     tentativas = 4
+    arquivos_baixados = False;
     for tentativa in range(tentativas):
         try:
             driver.execute_script("window.open(arguments[0], '_blank');", edital["Link"])
+            time.sleep(0.2)
             driver.switch_to.window(driver.window_handles[-1])
             # Espera até que o elemento pai esteja presente
-            WebDriverWait(driver, 40).until(
+            WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller'))
             )
-
+            time.sleep(0.2)
             # Espera até que pelo menos um row apareça
-            WebDriverWait(driver, 40).until(
+            WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper"))
             )
-            
+            time.sleep(0.2)
             elemento = driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[2]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
             rows = elemento.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
             arquivos =[]
@@ -665,12 +703,11 @@ def acao_baixar_arquivo(driver, edital, plataforma):
         except Exception as e:
             if tentativa < tentativas - 1:
                 print(f"Erro na tentativa acao_baixar_arquivo {tentativa + 1}: Tentando novamente...\n")
-                print(traceback.format_exc())
                 time.sleep(2)  
             else:
-                print(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
-                logs.error(f"Erro final em acao_baixar_arquivo: {type(e).__name__}: {str(e)} edital link:",  edital["Link"] ,"\n")
-                return None 
+                print(f"Erro final em acao_baixar_arquivo:edital link:",  edital["Link"] ,"\n")
+                logs.error(f"Erro final em acao_baixar_arquivo:{str(e)} edital link:",  edital["Link"] ,"\n")
+                return False 
             
         finally:
             driver.close()
@@ -678,10 +715,12 @@ def acao_baixar_arquivo(driver, edital, plataforma):
     
         if tentativa >= 1:
             return arquivos_baixados
-    return None
+    return False
            
              
 def salvar_arquivos(arquivos, edital, plataforma):
+    arquivos_baixados = 0
+    compactado = False
     try:
         pasta_edital, pasta_dia, pasta_compridos = obter_caminho_edital(edital, plataforma)
 
@@ -693,7 +732,6 @@ def salvar_arquivos(arquivos, edital, plataforma):
             os.makedirs(pasta_edital)  # Criar apenas a pasta do dia
             print(f"Criado diretório para data {pasta_edital}\n")
             
-        arquivos_baixados = 0
         quantidadeTipoEdital = sum(1 for arquivo in arquivos if arquivo.get("tipo").lower() == "edital")
       
         for arquivo in arquivos:
@@ -753,7 +791,11 @@ def salvar_arquivos(arquivos, edital, plataforma):
                         print(f"Erro final ao baixar {arquivo['link']}\n")
                         logs.error(f"Erro final ao baixar arquivo: {arquivo['link']}\n")
                                      
-        compactar_arquivos(pasta_edital, pasta_compridos)
+        # Tentar compactar apenas se algum arquivo foi baixado
+        if arquivos_baixados > 0:
+            compactado = compactar_arquivos(pasta_edital, pasta_compridos)
+        
+        return arquivos_baixados > 0, compactado
                         
     except Exception as e:
         logs.error("Erro ao salvar arquivos - ", str(e))
@@ -785,7 +827,7 @@ def compactar_arquivos(pasta_edital, pasta_compridos):
 
         if total_arquivos <= 1:
             print(f"Não há mais de 1 arquivo em '{pasta_edital}', não será compactado.")
-            return
+            return True
         
         # Cria o arquivo ZIP
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -799,9 +841,11 @@ def compactar_arquivos(pasta_edital, pasta_compridos):
 
         print(f"Pasta '{pasta_edital}' compactada como '{zip_path}'.")
         logs.info(f"Pasta '{pasta_edital}' compactada como '{zip_path}'")
+        return True
                 
     except Exception as e:
         logs.error(f"Erro ao compactar arquivos, error: {str(e)}")
+        return False
 
 def obter_extensao_response(response, nome_limpo):
     try:

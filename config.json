@@ -1,5 +1,5 @@
 {
-    "token_telegram": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
+    "token_telegram": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
     "token_telegram_alterados": "6897682861:AAHl__Zb__STWUi3Uhr37vS07J-4JHo_ETY",
     "dias_limpar_logs": 30,
     "conexao_banco": {
@@ -55,8 +55,9 @@
     "mafre":{
         "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
         "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
-        "user": "GNP",
-        "password": "cli130@",
+        "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=0000&p=consultaGeral.aspx",
+        "user": "BRASILGNP",
+        "password": "ype769#",
         "palavras_arquivos_exececoes": [
             "anexo",
             "termo",

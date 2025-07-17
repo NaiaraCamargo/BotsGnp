@@ -424,23 +424,46 @@ def gravar_novo_processo(editalnovo, plataforma):
                             editalnovo['Cnpj'] = limpar_cnpj(editalnovo['Cnpj'])  # Garante CNPJ limpo
                             link_aux = editalnovo.get('LinkBotao') or None
 
-                            sql_pncp = """INSERT INTO processos_pncp (
-                                            id, id_processo, id_contratacao_pncp, cnpj,
-                                            valor_total_estimado_compra, quantidade_total_itens,
-                                            data_inicio_recebimento_proposta,
-                                            data_fim_recebimento_proposta, codigo_unidade_compradora, link_auxiliar
-                                        ) VALUES (
-                                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                                        )"""
+                            # Campos base obrigatórios
+                            colunas = [
+                                "id", "id_processo", "id_contratacao_pncp", "cnpj",
+                                "valor_total_estimado_compra", "quantidade_total_itens",
+                                "data_inicio_recebimento_proposta", "data_fim_recebimento_proposta",
+                                "codigo_unidade_compradora", "link_auxiliar"
+                            ]
+                            valores = [
+                                id_pncp, novo_id,
+                                validar_campo_banco('IdContratacaoPncp', editalnovo, 256),
+                                validar_campo_banco('Cnpj', editalnovo, 14),
+                                validar_campo_banco('ValorTotalEstimadoCompra', editalnovo, 100),
+                                validar_campo_banco('QuantidadeItens', editalnovo, 100),
+                                validar_campo_banco('DataInicioRecebimentoProposta', editalnovo, 60),
+                                validar_campo_banco('DataFimRecebimentoProposta', editalnovo, 60),
+                                validar_campo_banco('CodigoUnidadeCompradora', editalnovo, 50),
+                                link_aux
+                            ]
 
-                            valores_pncp = (
-                                id_pncp, novo_id, validar_campo_banco('IdContratacaoPncp', editalnovo, 256),
-                                validar_campo_banco('Cnpj', editalnovo, 14), validar_campo_banco('ValorTotalEstimadoCompra', editalnovo, 100),
-                                validar_campo_banco('QuantidadeItens', editalnovo, 100), validar_campo_banco('DataInicioRecebimentoProposta', editalnovo, 60),
-                                validar_campo_banco('DataFimRecebimentoProposta', editalnovo, 60), validar_campo_banco('CodigoUnidadeCompradora', editalnovo, 50), link_aux 
-                            )
+                            # Adiciona dinamicamente os campos link_reserva_{i}, horario_arq_anexado_{i}, diferenca_inicio_e_anexo_{i}
+                            for i in range(1, 5):
+                                link_key = f"link_reserva_{i}"
+                                horario_key = f"horario_arq_anexado_{i}"
+                                diferenca_key = f"diferenca_inicio_e_anexo_{i}"
 
-                            cursor.execute(sql_pncp, valores_pncp)
+                                if editalnovo.get(link_key) or editalnovo.get(horario_key) or editalnovo.get(diferenca_key):
+                                    colunas.extend([link_key, horario_key, diferenca_key])
+                                    valores.extend([
+                                        editalnovo.get(link_key), 
+                                        editalnovo.get(horario_key), 
+                                        editalnovo.get(diferenca_key)
+                                    ])
+
+                            # Monta dinamicamente a SQL
+                            campos_sql = ", ".join(colunas)
+                            placeholders_sql = ", ".join(["%s"] * len(valores))
+                            sql_pncp = f"INSERT INTO processos_pncp ({campos_sql}) VALUES ({placeholders_sql})"
+
+                            # Executa
+                            cursor.execute(sql_pncp, valores)
 
                         conexao.commit()
                         print(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {novo_id}\n")
