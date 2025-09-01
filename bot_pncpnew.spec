@@ -5,7 +5,7 @@ a = Analysis(
     ['bot_pncpnew.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('d:\\SOFTBYTE GNP SEGUROS\\BOTS\\trunk\\venv\\Lib\\site-packages\\certifi\\cacert.pem', 'certifi')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

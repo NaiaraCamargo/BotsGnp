@@ -1,19 +1,18 @@
 # Imports da biblioteca padrão
+import contextlib
 import time
 import queue
 import shutil
 import threading
 import tempfile
-import traceback
 from unidecode import unidecode
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+import psutil
+
 
 # Imports de módulos locais
 from funcoespncp import *
@@ -44,14 +43,15 @@ def controles_iniciais(driver):
 def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
     def target(q):
         try:
-            if usar_opcao2:
-                caminho_chromedriver = ChromeDriverManager().install()
-                service = Service(executable_path=caminho_chromedriver)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-            driver.implicitly_wait(10)
-            q.put(driver)
+            with open(os.devnull, 'w') as devnull, contextlib.redirect_stderr(devnull):
+                if usar_opcao2:
+                    caminho_chromedriver = ChromeDriverManager().install()
+                    service = Service(executable_path=caminho_chromedriver)
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    driver = webdriver.Chrome(options=chrome_options)
+                driver.implicitly_wait(10)
+                q.put(driver)
         except Exception as e:
             q.put(e)
 
@@ -68,17 +68,27 @@ def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
         raise result
     return result
 
-def encerrar_driver_com_timeout(driver, timeout=5):
-    def target():
+def encerrar_driver_com_timeout(driver, timeout: int = 5):
+    """
+    Encerra o WebDriver em uma thread separada com timeout.
+    Evita travamento do programa caso driver.quit() não retorne.
+    """
+    def fechar_driver():
         try:
             driver.quit()
-        except Exception as e:
-            logs.warning(f"[AVISO] Erro ao tentar fechar o driver")
-    t = threading.Thread(target=target, daemon=True)
-    t.start()
-    t.join(timeout)
-    if t.is_alive():
-        logs.warning("[AVISO] driver.quit() travou e foi abandonado")
+        except Exception:
+           pass  
+
+    thread = threading.Thread(target=fechar_driver, daemon=True)
+    thread.start()
+    thread.join(timeout)
+
+    if thread.is_alive():
+        try:
+            pid = driver.service.process.pid
+            psutil.Process(pid).kill()
+        except Exception:
+            pass
         
 def criar_driver(mostrar_browser=False):
       # Cria um diretório temporário para perfil isolado
@@ -101,7 +111,6 @@ def criar_driver(mostrar_browser=False):
             driver = iniciar_driver_thread(chrome_options, usar_opcao2=True)
         except Exception as e2:
             shutil.rmtree(profile_dir, ignore_errors=True)
-            raise RuntimeError(f"Falha total ao iniciar o ChromeDriver: {e2}") from e2
 
     return driver, profile_dir
 

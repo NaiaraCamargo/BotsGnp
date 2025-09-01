@@ -1,6 +1,7 @@
 {
     "token_telegram": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
-    "token_telegram_alterados": "6897682861:AAHl__Zb__STWUi3Uhr37vS07J-4JHo_ETY",
+    "token_telegram_alterados": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
+    "token_telegram_reserva_ignorada":"6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
     "dias_limpar_logs": 30,
     "conexao_banco": {
         "host": "localhost",
@@ -10,6 +11,7 @@
         "database": "gnpnew"
     },
     "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
+    "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
     "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/SEGURO/",
     "raiz_local": "D:/PROGRAMAS GNP",
     "raiz_server": "//Killer",

@@ -2,13 +2,11 @@ import mysql
 import datetime
 from ast import literal_eval
 from uuid import uuid4
-
 import mysql.connector
 from funcoespncp import *
-from mysql.connector.plugins import mysql_native_password
 from unidecode import unidecode
-import os
 from threading import Lock
+import mysql.connector.plugins.mysql_native_password
 
 lock_insercao = Lock()
 
@@ -16,7 +14,7 @@ def retornar_dicionario_filtros(word):
     try:
         filtros_aux = {}
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute("SELECT * FROM terms WHERE is_active = 1 AND word = %s", (word,))
                 termos = cursor.fetchall()
@@ -35,7 +33,7 @@ def retornar_urls(plataforma):
     try:
         retorno_aux = {}
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute(f'''select pages.id as pagina_id, pages.url, plataformas_page.data_ultima_busca, 
                                     usuarios_crawler_python.id_telegram, plataformas_page.qtd_registros
@@ -74,7 +72,7 @@ def retornar_urls(plataforma):
 def atualizar_ultima_data(id_pagina):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute(f"""UPDATE plataformas_page SET data_ultima_busca = '{datetime.now()}' 
                                    WHERE id_page = {id_pagina};""")
@@ -151,7 +149,7 @@ def retornar_periodo_processos(data_inicial=True, data_final=True):
             return d_i, d_f
 
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor() as cursor:
                 if data_inicial:
                     cursor.execute("select min(STR_TO_DATE(substring(TRIM(data), 1, 10), '%d/%m/%Y')) from processos;")
@@ -338,7 +336,7 @@ def retornar_paginas(url=''):
 def atualizar_heuristica(id_pagina, qtd_itens):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor(dictionary=True) as cursor:
                 cursor.execute(f"""UPDATE plataformas_page SET qtd_registros = '{qtd_itens}' 
                                                    WHERE id_page = {id_pagina};""")
@@ -350,7 +348,7 @@ def atualizar_heuristica(id_pagina, qtd_itens):
 def verificar_existencia_edital_new(link, orgao, numero):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor(dictionary=True) as cursor:
                 resultado = []
 
@@ -452,11 +450,10 @@ def gravar_novo_processo(editalnovo, plataforma):
                                 if editalnovo.get(link_key) or editalnovo.get(horario_key) or editalnovo.get(diferenca_key):
                                     colunas.extend([link_key, horario_key, diferenca_key])
                                     valores.extend([
-                                        editalnovo.get(link_key), 
-                                        editalnovo.get(horario_key), 
-                                        editalnovo.get(diferenca_key)
+                                        str(editalnovo.get(link_key, '')),
+                                        str(editalnovo.get(horario_key, '')),
+                                        str(editalnovo.get(diferenca_key, ''))
                                     ])
-
                             # Monta dinamicamente a SQL
                             campos_sql = ", ".join(colunas)
                             placeholders_sql = ", ".join(["%s"] * len(valores))
@@ -500,7 +497,7 @@ def retornar_registro_paginas(idPagina, idPlataforma):
 def retornar_edital_existente_by_plataforma(editalExistente, plataforma):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
-                                     password=config("password"), database=config("database")) as conexao:
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor(dictionary=True) as cursor:
                 resultado = [] 
                 

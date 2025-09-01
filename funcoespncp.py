@@ -3,12 +3,9 @@ import os
 import re
 import logging
 from time import sleep
-from requests import post
+import unicodedata
 from datetime import datetime, timedelta
-from calendar import monthrange
-from unidecode import unidecode
 import json
-
 import requests
 
 logs = logging.getLogger('logger1')
@@ -17,6 +14,7 @@ usuariosNotificar = []
 configuracoes = {
     "token_telegram": "",
     "token_telegram_alterados": "",
+    "token_telegram_reserva_ignorada": "",
     "dias_limpar_logs": 30,
     "conexao_banco": {
         "host": "",
@@ -26,6 +24,7 @@ configuracoes = {
         "database": ""
     },
     "UNRAR_TOOL":"",
+    "path_wkhtmltoimage": "",
     "pasta_downloads": "",
     "raiz_local": "",
     "raiz_server": "",
@@ -117,7 +116,6 @@ def carregar_configuracoes():
         raise
 
 
-
 def atualizar_arquivo_configuracoes():
     try:
         with open(CAMINHO_CONFIG, "w", encoding="utf-8") as f:
@@ -139,53 +137,125 @@ def config(nome, texto=True):
 
 def enviar_mensagem(msg, usuarios_notificar, novo_processo, erro = False):
     try:
-        msg = formatar_mensagem_pncp(msg, erro)
+        msg_formatada = formatar_mensagem_pncp(msg, erro)
 
-        token_enviar = configuracoes.get('token_telegram', "")
+        token_padrao = configuracoes.get('token_telegram', "")
+        token_alterados = configuracoes.get('token_telegram_alterados', "")
+        token_reserva_ignorada = configuracoes.get('token_telegram_reserva_ignorada', "")
 
-        if not novo_processo and configuracoes.get('token_telegram_alterados', "") != "":
-            token_enviar = configuracoes.get('token_telegram_alterados', "")
-            logs.info(f"Enviar Mensagem: Token Telegram configurado para - {token_enviar}")
+        is_reserva_perdida = "reserva_perdida_1" in msg
+        is_aviso_reserva = "aviso_reserva" in msg
+        has_reserva_normal = "reserva_1:" in msg
+        
+        tokens_enviar = []
 
-        if msg != "" and token_enviar != "":
-            for usuario_notificar in usuarios_notificar:
-                tentativas = 3
-                for tentativa in range(tentativas):
-                    try:
-                        # Montando a URL para enviar a mensagem ao Telegram
-                        url = f"https://api.telegram.org/bot{token_enviar}/sendMessage"
+        if has_reserva_normal and not is_reserva_perdida and not is_aviso_reserva:
+            tokens_enviar.append(("padrao", token_padrao))
+        elif has_reserva_normal and is_reserva_perdida:
+            tokens_enviar.append(("padrao", token_padrao))
+            if token_alterados:
+                tokens_enviar.append(("perdida", token_alterados))
+        elif is_reserva_perdida and not is_aviso_reserva:
+            if token_alterados:
+                tokens_enviar.append(("perdida", token_alterados))
+        elif is_aviso_reserva and not has_reserva_normal and not is_reserva_perdida:
+            if token_reserva_ignorada:
+                tokens_enviar.append(("aviso", token_reserva_ignorada))
+        elif has_reserva_normal and is_aviso_reserva:
+           tokens_enviar.append(("padrao", token_padrao))
+        elif is_reserva_perdida and is_aviso_reserva:
+            if token_alterados:
+                tokens_enviar.append(("perdida", token_alterados))
 
-                        payload = {
-                            'chat_id': usuario_notificar,
-                            'parse_mode': 'HTML',
-                            'text': msg,
-                            'disable_web_page_preview': True
-                        }
+        tokens_enviar = list(dict.fromkeys(tokens_enviar))
+ 
+        ids_padrao = ["-1002580376863", "-1002638350285"]
+        ids_reserva_perdida = ["-1002422647995", "-1002638350285"]
+        ids_aviso_reserva = ["-1002422647995", "-1002580376863"]
 
-                        response = requests.post(url, data=payload)
-                        
-                        if response.status_code == 200:
-                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {msg}")
-                        else:
-                            logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
+        for tipo, token in tokens_enviar:
+            usuarios_filtrados = usuarios_notificar.copy()
+            # Remover conforme o caso
+            if tipo == "padrao":
+                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_padrao]
+            elif tipo == "perdida":
+                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_reserva_perdida]
+            elif tipo == "aviso":
+                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_aviso_reserva]
+            
+            if msg_formatada  != "" and token != "":
+                for usuario_notificar in usuarios_filtrados:
+                    tentativas = 3
+                    for tentativa in range(tentativas):
+                        try:
+                            # Montando a URL para enviar a mensagem ao Telegram
+                            url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-                        sleep(1)
-                        break  # Envia a mensagem e sai do loop de tentativas
-                    except Exception as ee:
-                        if tentativa < tentativas - 1:
-                            logs.warning(f"Tentativa {tentativa + 1} falhou. Tentando novamente...")
-                            sleep(2)
-                        else:
-                            logs.error(f"Erro Enviar Mensagem: Não foi possível enviar para: {usuario_notificar}. Erro: {str(ee)}")
-        else:
-            logs.warning("Mensagem ou token de envio inválido.")
+                            payload = {
+                                'chat_id': usuario_notificar,
+                                'parse_mode': 'HTML',
+                                'text': msg_formatada,
+                                'disable_web_page_preview': True
+                            }
+
+                            response = requests.post(url, data=payload)
+                            
+                            if response.status_code == 200:
+                                logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {msg}")
+                            else:
+                                logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
+
+                            sleep(1)
+                            break  # Envia a mensagem e sai do loop de tentativas
+                        except Exception as ee:
+                            if tentativa < tentativas - 1:
+                                logs.warning(f"Tentativa {tentativa + 1} falhou. Tentando novamente...")
+                                sleep(2)
+                            else:
+                                logs.error(f"Erro Enviar Mensagem: Não foi possível enviar para: {usuario_notificar}. Erro: {str(ee)}")
+                                
+                        # ⬇️ Novo bloco: envio das imagens (img_1, img_2, ...)
+                    if isinstance(msg, dict):
+                        for i in range(1, 3):  # Ajuste se precisar de mais imagens
+                            chave_img = f"img_{i}"
+                            if chave_img in msg:
+                                try:
+                                    img_path = msg[chave_img]
+                                    url_photo = f"https://api.telegram.org/bot{token}/sendPhoto"
+                                    with open(img_path, 'rb') as photo:
+                                        files = {'photo': photo}
+                                        data = {'chat_id': usuario_notificar}
+                                        resp_img = requests.post(url_photo, files=files, data=data)
+                                        if resp_img.status_code == 200:
+                                            logs.info(f"Imagem {chave_img} enviada para {usuario_notificar}")
+                                        else:
+                                            logs.error(f"Erro ao enviar imagem {chave_img}: {resp_img.text}")
+                                            
+                                    sleep(0.5)
+                                    
+                                    try:
+                                        os.remove(img_path)
+                                        logs.info(f"Imagem {img_path} removida com sucesso.")
+                                    except Exception as remove_err:
+                                        logs.error(f"Erro ao remover imagem {img_path}: {str(remove_err)}")
+                                except Exception as img_err:
+                                    logs.error(f"Erro ao enviar imagem {chave_img}: {str(img_err)}")
+                            
+            else:
+                logs.warning("Mensagem ou token de envio inválido.")
     except Exception as e:
         logs.error(f"Erro ao enviar a mensagem: {str(e)}")
 
-
 def validar_campo_banco(key, dic, comprimento):
     try:
-        valor = validar_item_key(key, dic, barra_n=False).strip()
+        valor = validar_item_key(key, dic, barra_n=False)
+
+        # Se for lista, tenta pegar o primeiro item
+        if isinstance(valor, list):
+            valor = valor[0] if valor else ""
+
+        # Converte para string e aplica strip
+        valor = str(valor).strip()
 
         if len(valor) > comprimento:
             logs.info(f"{str(key)} maior q {str(comprimento)}, "
@@ -194,11 +264,13 @@ def validar_campo_banco(key, dic, comprimento):
             return valor[:comprimento]
 
         return valor
+
     except Exception as e:
         logs.error(f"Erro ao validar campo"
                    f" - Chave: {str(key)},"
                    f" - Comprimento - {str(comprimento)},"
                    f" Valores: {str(dic)} - {str(e)}")
+        return ""
 
 
 def validar_item_key(key, dic, key_format="", bold=False, bold_chave=False, is_int=False, barra_n=True, erro=True):
@@ -227,39 +299,6 @@ def validar_item_key(key, dic, key_format="", bold=False, bold_chave=False, is_i
 
     return ""
 
-
-def liberar_notificacao(edital, novo=True):
-    # Esses sao os status que buscamos
-    #   NOVOS
-    #       PUBLICADO
-    #       RECEPÇÃO DE PROPOSTAS
-    #       Recebendo Propostas
-
-    #   ALTERACOES
-    #       Suspenso - Antes da Abertura
-    #       Cancelado
-
-    if not edital.get("notificar_retorno", False):
-        return False
-
-    aux = unidecode(edital.get("Situacao", edital.get("SituacaoAtual", "")).replace(" ", '').casefold())
-    if novo and (aux == "publicado" or aux == "publicada" or aux == "recepcaodepropostas" or aux == "recepcaodeproposta"
-                 or aux == "recebendopropostas" or aux == "recebendoproposta" or aux == "aguardandoinicioderecebimentodepropostas"
-                 or aux == "aguardandoinicioderecebimentodeproposta"):
-        logs.info(f"Novo, Palavras Chave: {str(edital.get('palavras_chave'))}")
-        return True
-
-    elif novo and (aux == "suspenso-antesdaabertura" or aux == "cancelado"):
-        logs.info(f"Edital nao encontrado no banco, porem veio com status '{str(aux)}'")
-
-    elif not novo and (aux == "publicado" or aux == "publicada" or aux == "recepcaodepropostas"
-                       or aux == "recepcaodeproposta" or aux == "recebendopropostas" or aux == "recebendoproposta"
-                       or aux == "suspenso-antesdaabertura" or aux == "cancelado" or aux == "aguardandoinicioderecebimentodepropostas"
-                       or aux == "aguardandoinicioderecebimentodeproposta"):
-        logs.info(f"Existe, Palavras Chave: {str(edital.get('palavras_chave'))}")
-        return True
-
-    return False
 
 def formatar_data(data="", limpar=True, padrao="universal"):
     try:
@@ -297,6 +336,7 @@ def cnpj_formatado(cnpj):
 
 def limpar_console():
     os.system('cls' if os.name == 'nt' else 'clear')
+
 
 def formatar_mensagem_pncp(msg_dict, erro):
     try:
@@ -387,28 +427,40 @@ def formatar_mensagem_pncp(msg_dict, erro):
         if "LinkBotao" in msg_dict:
             nova_msg += f"<b>LINK AUXILIAR:</b> {html.escape(str(msg_dict['LinkBotao']))}\n\n"
 
-        #Reservas
-        # Monta as reservas normais, do tipo 'reserva', 'reserva_2', 'reserva_3', ...
-        for chave in sorted(msg_dict.keys()):
-            m = re.fullmatch(r"link_reserva_(\d+)", chave)
+        # Coleta todos os índices únicos das chaves relevantes
+        indices = set()
+        for chave in msg_dict:
+            m = re.fullmatch(r"(?:link_reserva|reserva_perdida|ramo|ramo_perdido)_(\d+)", chave)
             if m:
-                numero = m.group(1)
-                label = f"Reserva {numero}"
-                nova_msg += f"<b>{label}:</b> {html.escape(str(msg_dict[chave]))}\n\n"
+                indices.add(int(m.group(1)))
 
-        # Monta as reservas perdidas, do tipo 'reserva_perdida', 'reserva_perdida_2', 'reserva_perdida_3', ...
-        for chave in sorted(msg_dict.keys()):
-            m = re.fullmatch(r"reserva_perdida(_(\d+))?", chave)
-            if m:
-                numero = m.group(2)
-                label = f"Reserva Perdida" if numero is None else f"Reserva Perdida {numero}"
-                nova_msg += f"<b>{label}:</b> {html.escape(str(msg_dict[chave]))}\n\n"
+        # Monta a mensagem por índice, com o ramo abaixo da reserva correspondente
+        for i in sorted(indices):
+            link_key = f"link_reserva_{i}"
+            perdida_key = f"reserva_perdida_{i}"
+            ramo_key = f"ramo_{i}"
+            ramo_perdido_key = f"ramo_perdido_{i}"
+
+            if link_key in msg_dict:
+                nova_msg += f"<b>Reserva {i}:</b> {html.escape(str(msg_dict[link_key]))}\n"
+                if ramo_key in msg_dict:
+                    nova_msg += f"<b>RAMO {i}:</b> {html.escape(str(msg_dict[ramo_key]))}\n"
+                nova_msg += "\n"
+
+            if perdida_key in msg_dict:
+                nova_msg += f"<b>Reserva Perdida {i}:</b> {html.escape(str(msg_dict[perdida_key]))}\n"
+                if ramo_perdido_key in msg_dict:
+                    nova_msg += f"<b>RAMO Perdido {i}:</b> {html.escape(str(msg_dict[ramo_perdido_key]))}\n"
+                nova_msg += "\n"
+
                 
         if "aviso_reserva" in msg_dict:
             aviso = str(msg_dict["aviso_reserva"]).strip()
             aviso = html.escape(aviso)  # Escapa caracteres especiais HTML
             nova_msg += f"<b>⚠️ AVISO RESERVA:</b> {aviso}\n\n"
          
+        #if "horario_termino" in msg_dict:
+            #nova_msg += f"<b>TEMPO DE PROCESSAMENTO:</b> <code>{html.escape(str(msg_dict['horario_termino']))}</code>\n\n"
             
         # Descrição
         if "Descricao" in msg_dict:
@@ -425,23 +477,63 @@ def formatar_mensagem_pncp(msg_dict, erro):
     except Exception as e:
         logs.error(f"Não foi possível formatar a mensagem: {str(e)}")
         return ""
+  
     
 def limpar_cnpj(cnpj):
     """Remove pontos, barras e traços do CNPJ."""
     return re.sub(r'\D', '', cnpj) if cnpj else cnpj
 
-def gerar_urls_base():
-    urls_geradas = []
-    base_url = "https://pncp.gov.br/app/editais?q={palavra}&&status=recebendo_proposta&pagina=1"
+
+def limpar_valor(valor_str):
+    if not valor_str:
+        return 0.0
+    if "SIGILOSO" in valor_str.upper():
+        return "SIGILOSO"
+    valor_str = valor_str.replace("R$", "").replace(".", "").replace(",", ".").strip()
+    try:
+        return float(valor_str)
+    except:
+        return 0.0
+
+
+def remover_acentos(texto):
+      return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
+
+
+def normalizar_unicode(texto):
+    # Remove acentuação e caracteres não-ASCII (último recurso)
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+
+
+def normalizar_hifens(texto):
+    # Substitui hífens especiais por hífen ASCII padrão "-"
+    return re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2212]', '-', texto)
+
+
+def limpar_para_mysql(texto):
+    if not isinstance(texto, str):
+        return texto
+    texto = normalizar_hifens(texto)
+    texto = unicodedata.normalize("NFKC", texto)  # Normaliza formas compostas para pré-compostas
+    return texto
+
+def remover_acentos_ramos(texto):
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    )
+# Cria um dicionário com os nomes principais por código
+NOMES_RAMO = {
+    "1": "AUTOMÓVEIS",
+    "2": "PATRIMONIAL",
+    "3": "MASSIFICADOS",
+    "5": "AERONÁUTICO",
+    "6": "VIDA",
+    "9": "RESPONSABILIDADE CIVIL",
+    "20": "EMBARCAÇÃO",
+    "23": "AERONÁUTICO RETA",
+    "24": "AERONÁUTICO CASCO",
+    "25": "MÁQUINAS E EQUIPAMENTOS"
+}
     
-    for item in configuracoes.get("urls", []):
-        palavra_chave = item.get("palavra_chave", "")
-        if palavra_chave:
-            url_formatada = base_url.format(palavra=palavra_chave)
-            urls_geradas.append({
-                "url": url_formatada,
-                "palavra_chave": palavra_chave,
-                "excecoes": item.get("excecoes", [])
-            })
     
-    return urls_geradas
