@@ -143,9 +143,9 @@ def enviar_mensagem(msg, usuarios_notificar, novo_processo, erro = False):
         token_alterados = configuracoes.get('token_telegram_alterados', "")
         token_reserva_ignorada = configuracoes.get('token_telegram_reserva_ignorada', "")
 
-        is_reserva_perdida = "reserva_perdida_1" in msg
-        is_aviso_reserva = "aviso_reserva" in msg
-        has_reserva_normal = "reserva_1:" in msg
+        is_reserva_perdida = "reserva_perdida_1" in msg.keys()
+        is_aviso_reserva = "aviso_reserva" in msg.keys()
+        has_reserva_normal = "link_reserva_1" in msg.keys()
         
         tokens_enviar = []
 

@@ -115,7 +115,7 @@ def trocar_senha(driver_mapfre, password):
             tentativas += 1
             if tentativas >= max_tentativas:
                 logs.error("trocar_senha - ", str(ex))
-                return "Erro ao processar trocar senha; ", ""
+                return "Erro ao processar trocar senha;", ""
    
 def extrair_campos_hidden(html):
     """Extrai todos os campos hidden da página (VIEWSTATE, EVENTVALIDATION, etc.)"""
@@ -154,7 +154,7 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
         imgs = []
         url_pos_login = configuracoes.get("mafre", {}).get("url_pos_login")
         horario_inicio = datetime.now().strftime("%H:%M:%S")
-        print(f">>>>>Entrou para processar mapfre: {horario_inicio}<<<<<<")
+        logs.warning(f">>>>>Entrou para processar mapfre: {horario_inicio}<<<<<<")
         cnpj_pesquisa = cnpj_formatado(edital.get("Cnpj", ""))
         cookies_list = driver_mapfre.get_cookies()
         cookies = {c['name']: c['value'] for c in cookies_list}
@@ -163,7 +163,11 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
             "X-Requested-With": "XMLHttpRequest"
         }
 
-        soup_pos_login = processar_requests_get(requests.get, cookies, headers)
+        soup_pos_login, info_pos_login = processar_requests_get(url_pos_login, cookies, headers)
+        
+        if info_pos_login:
+            msg += f"Erro info_incluir:{info_pos_login}"
+            
         viewstate = soup_pos_login.find(id="__VIEWSTATE")["value"]
         viewstategenerator = soup_pos_login.find(id="__VIEWSTATEGENERATOR")["value"]
         eventvalidation = soup_pos_login.find(id="__EVENTVALIDATION")["value"]
@@ -181,7 +185,11 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
             "btnFilter": "Filtrar", 
         }
 
-        soup_filter, r_filter = processar_resquests_post(url_pos_login, cookies, headers, data_filter)
+        soup_filter, r_filter, info_filter = processar_resquests_post(url_pos_login, cookies, headers, data_filter)
+        
+        if info_filter:
+            msg += f"Erro info_filter:{info_filter}"
+                
         texto = r_filter.text 
         viewstate = pegar_hidden(texto, "__VIEWSTATE")
         viewstategenerator = pegar_hidden(texto, "__VIEWSTATEGENERATOR")
@@ -191,7 +199,7 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
         
         if not tabela:
             print("CNPJ não encontrado ou tabela não carregou.") 
-            return "CNPJ não encontrado ou tabela não carregou. ", [], []
+            return "Erro CNPJ não encontrado ou tabela não carregou;", [], []
         
         cnpj_encontrado = tabela.find_all("tr")[1].find_all("td")[4].text.strip() 
         idCliente = tabela.find_all("tr")[1].find_all("td")[1].text.strip()
@@ -221,8 +229,12 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
                 "btnLicitacao": "Licitacao"
             }
  
-            soup_filter_btn_licitacao, r_filter_btn_licitacao =  processar_resquests_post(url_pos_login, cookies, headers, data_btn_licitacao)
-           
+            soup_filter_btn_licitacao, r_filter_btn_licitacao, info_btn_licitacao = processar_resquests_post(url_pos_login, cookies, headers, data_btn_licitacao)
+         
+            if info_btn_licitacao:
+                msg += f"Erro info_btn_licitacao:{info_btn_licitacao}"
+               
+                
             match = re.search(r'pageRedirect\|\|(.*?)\|', r_filter_btn_licitacao.text)
             if match:
                 url_redirect = match.group(1)
@@ -250,13 +262,16 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
         imgs = []
         url_arquivo_digital =  configuracoes.get("mafre", {}).get("url_arquivo_digital") 
         
-        soup_link_form = processar_requests_get(url_form, cookies, headers) 
+        soup_link_form, info_link_form = processar_requests_get(url_form, cookies, headers) 
+        if info_link_form:
+            msg += f"Erro info_incluir:{info_link_form}"
         
         ramos_valores = edital.get("ramos_valores", [])    
         if isinstance(ramos_valores, str):
             ramos_valores = [ramos_valores]
         for i, ramo in enumerate(ramos_valores):
             tentativas = 0
+            dez_segundos = False
             while True:
                 uf_sigla = edital.get("Uf", "").upper()
                 territorial_valor = mapeamento_territorial.get(uf_sigla, "")
@@ -273,7 +288,10 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 elif territorial_valor in ["RIO DE JANEIRO", "NORTE E NORDESTE", "CENTRO OESTE", "MINAS GERAIS"]:
                     iddgt = "DC2"
                             
-                texto_incluir = clicar_new_rerserva(soup_link_form, url_form, cookies, headers)
+                texto_incluir, info_incluir = clicar_new_rerserva(soup_link_form, url_form, cookies, headers)
+                
+                if info_incluir:
+                    msg += f"Erro info_incluir:{info_incluir}"
             
                 viewstate = pegar_hidden(texto_incluir, "__VIEWSTATE")
                 viewstategenerator = pegar_hidden(texto_incluir, "__VIEWSTATEGENERATOR")
@@ -341,7 +359,8 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                     "X-Requested-With": "XMLHttpRequest",
                     "X-MicrosoftAjax": "Delta=true",
                 }
-                
+                horario_post_campo = datetime.now().strftime("%H:%M:%S")
+                logs.warning(f">>>>>Entrou para enviar campo a campo em: {horario_post_campo}<<<<<<")
                 # 5. Montar payload do formulário
                 for lista_campos, lista_valores in campos:
                     for campo, valor in zip(lista_campos, lista_valores):
@@ -360,7 +379,10 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                     dados_acumulados["__VIEWSTATE"] = viewstate
                     dados_acumulados["__EVENTVALIDATION"] = eventvalidation
                      
-                    soup_post_campo, r_post_campo = processar_resquests_post(url_form, cookies, ASP_Net_headers, dados_acumulados,)
+                    soup_post_campo, r_post_campo, info_post_campo = processar_resquests_post(url_form, cookies, ASP_Net_headers, dados_acumulados,)
+                    if info_post_campo:
+                        msg += f"Erro soup_post_campo:{info_post_campo}"
+                        
                     html = r_post_campo.text
                     viewstate = pegar_hidden(html, "__VIEWSTATE")
                     viewstategenerator = pegar_hidden(html, "__VIEWSTATEGENERATOR")
@@ -379,12 +401,21 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 dados_acumulados["__EVENTVALIDATION"] = eventvalidation
                 dados_acumulados["btnUpdate"] = "Novo"
                 
-                time.sleep(2)
+                if dez_segundos:
+                    time.sleep(2)
+                if tentativas > 0:
+                    soup_post, r_post, lbl_status = None, None, None
+                    
+                time.sleep(5)
                 horario_post = datetime.now().strftime("%H:%M:%S")
-                print(f">>>>>Entrou para enviar o post em: {horario_post}<<<<<<")
-                soup_post , r_post = processar_resquests_post(url_form,cookies, ASP_Net_headers, dados_acumulados)
+                logs.warning(f">>>>>Entrou para enviar o post em: {horario_post}<<<<<<")
+                soup_post, r_post, info_post = processar_resquests_post(url_form, cookies, ASP_Net_headers, dados_acumulados)
+                
+                if info_post:
+                    msg += info_post
+                    
                 horario_tmp = datetime.now().strftime("%H:%M:%S")
-                print(f">>>>>Enviou o post em: {horario_tmp}<<<<<<")
+                logs.warning(f">>>>>Enviou o post em: {horario_tmp}<<<<<<")
                 
                 lbl_status = soup_post.find("span", id="lblStatus")
                 if lbl_status:
@@ -403,12 +434,14 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 
                 if "Não é permitido gravar novas reservas em menos de 10 segundos." in status_texto:
                     print(" \n🔁 AVISO DE 10 SEGUNDOS PARA GRAVAR NOVA MENSAGEM... SERÁ FEITA NOVA TENTATIVA \n")
-                    time.sleep(2)
+                    logs.warning(" \n >>>>AVISO DE 10 SEGUNDOS PARA GRAVAR NOVA MENSAGEM... SERÁ FEITA NOVA TENTATIVA<<<<<<< \n")
+                    dez_segundos = True
                     tentativas += 1
                     continue
                 
                 if "vermelho" in status_texto or "menor que 25 dígitos" in status_texto:
                     print("\n🔁 AVISO DE CAMPOS EM VERMELHO OU NÚMERO EDITAL MENOR QUE 25 DÍGITOS... SERÁ FEITA NOVA TENTATIVA \n")
+                    logs.warning(" \n >>>>AVISO DE CAMPOS EM VERMELHO OU NÚMERO EDITAL MENOR QUE 25 DÍGITOS... SERÁ FEITA NOVA TENTATIVA<<<<<<< \n")
                     tentativas += 1
                     continue
                     
@@ -423,7 +456,7 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                     if thread_download:
                         thread_download.join()  # Garante que o download terminou antes de anexar
 
-                    msg += anexar_arquivos_mafre(driver_mapfre, edital)     
+                    msg += anexar_arquivos_mafre(driver_mapfre, edital, id_reserva)     
                     msg += f"Sucesso ao cadastrar reserva para o ramo: {ramo}, reserva: {id_reserva};"
                     print(f"✅ Sucesso ao cadastrar reserva para o ramo: {ramo}, reserva: {id_reserva};")
                     logs.warning(f"Sucesso ao cadastrar reserva para o ramo: {ramo}, reserva: {id_reserva};")
@@ -503,51 +536,51 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
     
     except Exception as ex:
         logs.error("Erro ao tentar cadastrar licitacao; ", str(ex))
-        return "Erro ao tentar cadastrar licitacao; ", [], []
+        return "Erro ao tentar cadastrar licitacao;", [], []
 
 def processar_requests_get(url, cookies, headers):
     try:
         response_get = requests.get(url, cookies=cookies, headers=headers, timeout=15, verify=certifi.where())
         if response_get.status_code == 200:
             soup_get = BeautifulSoup(response_get.text, "html.parser")
-            return soup_get
+            return soup_get, ""
         else:
             logs.error(f"Erro para pegara url no response:{response_get.text}")
-            return f"Erro para pegara url no response:", [],[]
+            return response_get.text, "Erro para pegara url no response;"
     except requests.exceptions.Timeout:
         logs.error(f"Erro: processar_requests_get Timeout na requisição. O servidor demorou demais para responder.")
         return f"Erro: Timeout na requisição. O servidor demorou demais para responde;", [],[]
     except requests.exceptions.SSLError as ssl_err:
         logs.error(f"Erro SSL processar_requests_com_tratamento: {ssl_err}")
-        return f"Erro SSL;", [],[]
+        return response_get.text, "Erro SSL;"
     except requests.exceptions.ConnectionError as conn_err:
         logs.error(f"Erro de conexão processar_requests_com_tratamento: {conn_err}")
-        return f"Erro de conexão;", [],[]
+        return response_get.text, "Erro de conexão;"
     except Exception as e:
         logs.error(f"Erro inesperado processar_requests_com_tratamento: {e}") 
-        return f"Erro inesperado; ", [],[]   
+        return response_get.text, "Erro inesperado;"
     
-def processar_resquests_post(url, data, cookies, headers):
+def processar_resquests_post(url, cookies, headers, data):
     try:
         response_post = requests.post(url, cookies=cookies, headers=headers, data= data,  timeout=15, verify=certifi.where())
         if response_post.status_code == 200:
             soup_post = BeautifulSoup(response_post.text, "html.parser")
-            return soup_post, response_post
+            return soup_post, response_post, ""
         else:
-            logs.error(f"Erro para pegara url no response:{soup_post.text}")
-            return f"Erro para pegara url no response;", [],[]
+            logs.error(f"Erro para pegara url no response:{response_post.text}")
+            return f"Erro para pegara url no response;", response_post.text
     except requests.exceptions.Timeout:
         logs.error(f"Erro: Timeout na requisição. O servidor demorou demais para responder.")
-        return f"Erro: Timeout na requisição. O servidor demorou demais para responde;", [],[]
+        return response_post.text, "Erro: Timeout na requisição. O servidor demorou demais para responde;"
     except requests.exceptions.SSLError as ssl_err:
         logs.error(f"Erro SSL: {ssl_err}")
-        return f"Erro SSL;", [],[]
+        return response_post.text, "Erro SSL;",response_post.text
     except requests.exceptions.ConnectionError as conn_err:
         logs.error(f"Erro de conexão: {conn_err}")
-        return f"Erro de conexão;", [],[]
+        return response_post.text, "Erro de conexão;", response_post.text
     except Exception as e:
         logs.error(f"Erro inesperado: {e}") 
-        return f"Erro inesperado; ", [],[]   
+        return response_post.text, "Erro inesperado; ",response_post.text
 
 def clicar_new_rerserva(soup_final, url_form, cookies, headers):
     try:  
@@ -567,25 +600,25 @@ def clicar_new_rerserva(soup_final, url_form, cookies, headers):
             "__LASTFOCUS": ""
         }
   
-        soup_incluir , r_incluir = processar_resquests_post(url_form, cookies, headers, data_incluir)
+        soup_incluir , r_incluir, info = processar_resquests_post(url_form, cookies, headers, data_incluir)
         if r_incluir.status_code != 200:
             logs.error(f"Erro para clicar em incluir nova reservar:{r_incluir.text}")
-            return f"Erro para clicar em incluir nova reservar; ", [],[]
+            return r_incluir.text, info
         texto_incluir = r_incluir.text
-        return texto_incluir
+        return texto_incluir, info
         
     except Exception as ex:
         logs.error("clicar_new_rerserva - ", str(ex))
-        return "Erro ao clicar em inculir nova reserva; ", [], [] 
+        return "Erro ao clicar em inculir nova reserva;", [], [] 
   
-def anexar_arquivos_mafre(driver_mapfre, edital):
+def anexar_arquivos_mafre(driver_mapfre, edital, id_reserva):
     try:
         caminho_arquivos = edital.get("pasta_edital_original", "")
         palavras_arquivos_exececoes = configuracoes.get("mafre", {}).get("palavras_arquivos_exececoes", [])
 
         if not caminho_arquivos:
-            logs.warning(f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')}")
-            return f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')};"
+            logs.warning(f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')}, reserva: {id_reserva}")
+            return f"Erro Caminho dos arquivos em branco para reserva: {id_reserva}"
 
         arquivos = [
             f for f in os.listdir(caminho_arquivos)
@@ -594,7 +627,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
 
         if not arquivos:
             logs.warning(f"Diretório sem arquivos: {caminho_arquivos} - Link: {edital.get('Link', '')};")
-            return f"Nenhum arquivo encontrado em: {caminho_arquivos} - Edital: {edital.get('Link', '')};"
+            return f"Erro Nenhum arquivo encontrado em: {caminho_arquivos} reserva: {id_reserva}"
 
         WebDriverWait(driver_mapfre, 20).until(
             EC.presence_of_all_elements_located((By.ID, "uptPnlForm"))
@@ -617,7 +650,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
             caminho_item = os.path.join(caminho_arquivos, arquivos[0])
 
         if not caminho_item:
-            return "Nenhum arquivo válido encontrado para envio;"
+            return f"Nenhum arquivo válido encontrado para envio reserva: {id_reserva}"
 
         botao_escolher_arquivos.send_keys(caminho_item)
 
@@ -637,7 +670,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
             )
             
             data_inclusao_arquivo = data_inclusao_arquivo_element.text.strip()
-            return f"Sucesso ao gravar anexo, data inclusao: {data_inclusao_arquivo};"
+            return f"Sucesso ao gravar anexo, data inclusao: {data_inclusao_arquivo}"
         else:
             return status_texto
 
@@ -701,7 +734,7 @@ def validar_criar_reserva(edital):
  
     except Exception as ex:
         logs.error("validar_criar_reserva - Erro: %s", str(ex))
-        return "Erro ao validar reserva se atende requisitos, caiu no except"  
+        return "Erro ao validar reserva se atende requisitos, caiu no except;"  
 
 RAMOS = {
     # AERONÁUTICO

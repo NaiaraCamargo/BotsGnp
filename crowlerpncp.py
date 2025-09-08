@@ -126,8 +126,7 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
             
             driver, profile_dir = None, None
            
-            try:
-                
+            try:            
                 driver, profile_dir = criar_driver(mostrar_browser)
                 acessar_url(driver, url_base, plataforma, processar_dia, hora_atual)
                 
@@ -139,7 +138,7 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
 
                 print(f"\nIniciando processamento da página: {url}\n")
                 processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios,lista_elementos, plataforma, total_processados, 
-                    quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, profile_dir)
+                    quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
                 
                 atualizar_ultima_data(id_pagina)
                 filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
@@ -234,7 +233,7 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
         if len(lista_planilha) > 0:
             print(f"Processando Planilhas...\n")
             gerar_excel_registros(lista_planilha, plataforma, True) 
-            time.sleep(2)
+            time.sleep(1)
                 
         if processar_todos or processa_mais_paginas:
             processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, 
@@ -302,7 +301,8 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
         if palavra_chave in ["obra", "pintura", "reforma"]:
             configuracoes[f"processar_todos_{palavra_chave}"] = False
             atualizar_arquivo_configuracoes()
-
+            
+        atualizar_heuristica(id_pagina, total_itens_tmp) 
         carregar_configuracoes()
         filtros["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
         crawler(urlBase, filtros, notificacao_config)
@@ -361,7 +361,7 @@ def processar_texto(texto, plataforma, driver, driver_mapfre, urlBase, id_pagina
 
         return edital, error_timeout
     except Exception as e:
-        print(f"[ERRO AO PROCESSAR EDITAL] {link} - {e}")
+        logs.error(f"[ERRO AO PROCESSAR EDITAL] {link} - {e}")
     finally:
         with lock_editais:
             editais_em_processamento.discard(link)
@@ -378,7 +378,8 @@ def processar_obra(edital, driver, ids_usuarios, error_timeout):
         pasta_killer, pasta_comprimidos = obter_pastas_download(edital, "obra")
         edital["pasta_download"] = pasta_killer
         edital["pasta_comprimidos"] = pasta_comprimidos
-
+        print(f"\nProcessando: {edital}\n") 
+            
         if edital["Uf"].upper() == "RS":
             enviar_mensagem(edital, ids_usuarios, novo_processo=True)
             
@@ -387,18 +388,21 @@ def processar_obra(edital, driver, ids_usuarios, error_timeout):
         return edital, 0
     
     except Exception as e:
-        print(f"[ERRO no processar_obra:] {edital.get('Link', '').strip()} - {e}")
+        logs.error(f"[ERRO no processar_obra:] {edital.get('Link', '').strip()} - {e}")
 
 def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, hora_antes_extrair_dados):
     try:
         novos_dados = extrair_dados_nova_pagina_para_mapfre(driver, edital)
         edital.update(novos_dados)
-
+        print(f"\nProcessando: {edital}\n") 
+            
         retorno, msg, ramos_valores = validar_criar_reserva(edital)
         if retorno:
             edital["ramos_valores"] = ramos_valores
         else:
             edital["aviso_reserva"] = msg
+            novos_dados = extrair_dados_nova_pagina(driver, edital)
+            edital.update(novos_dados)
             enviar_mensagem(edital, ids_usuarios, novo_processo=True)
             gravar_novo_processo(edital, "pncp")
             return edital, error_timeout
@@ -429,7 +433,7 @@ def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, h
         inicio = datetime.strptime(hora_antes_extrair_dados, formato)
         fim = datetime.strptime(datetime.now().strftime("%H:%M:%S"), formato)
         total_segundos = int((fim - inicio).total_seconds())
-        print(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
+        logs.warning(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
         edital["horario_termino"] = str(timedelta(seconds=int((fim - inicio).total_seconds())))
 
         if not resultado_queue.empty():
@@ -443,7 +447,7 @@ def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, h
         return edital, 0
     
     except Exception as e:
-        print(f"[ERRO no processar_pncp:] {edital.get('Link', '').strip()} - {e}")
+        logs.error(f"[ERRO no processar_pncp:] {edital.get('Link', '').strip()} - {e}")
 
 def tratar_resultado_mafre(msg, ids, imgs, edital, hora_antes_iniciar_reserva):
     try:
@@ -457,64 +461,62 @@ def tratar_resultado_mafre(msg, ids, imgs, edital, hora_antes_iniciar_reserva):
             elif "erro" in parte_lower:
                 edital["aviso_reserva"] = parte
     except Exception as e:
-        print(f"[ERRO no tratar_resultado_mafre:] {edital.get('Link', '').strip()} - {e}")
+        logs.error(f"[ERRO no tratar_resultado_mafre:] {edital.get('Link', '').strip()} - {e}")
         
 def tratar_reserva_existente(parte, ids, imgs, edital):
     try:
-        reservas_encontradas = re.findall(r"reserva:\s*(\d+)", parte)
-        ramos_encontrados = re.findall(r"ramo:\s*(\d+)", parte)
-
         for i, id_val in enumerate(ids, start=1):
-            edital[f"reserva_perdida_{i}"] = id_val
             match_id_url = re.search(r"id=(\d+)", id_val)
             if not match_id_url:
                 continue
-
+            
             id_extraido = match_id_url.group(1)
-            id_reserva = reservas_encontradas[i - 1] if i - 1 < len(reservas_encontradas) else None
-            ramo_id = ramos_encontrados[i - 1] if i - 1 < len(ramos_encontrados) else None
+            match_reserva = re.search(r"reserva:\s*(\d+)", parte)
+            id_reserva = match_reserva.group(1) if match_reserva else None
+            match_ramo = re.search(r"ramo:\s*(\d+)", parte)
+            ramo_id = match_ramo.group(1) if match_ramo else None
 
             if id_reserva == id_extraido and ramo_id:
+                edital[f"reserva_perdida_{i}"] = id_val
                 edital[f"ramo_perdido_{i}"] = NOMES_RAMO.get(ramo_id, f"Ramo {ramo_id}")
             if imgs and i - 1 < len(imgs):
                 edital[f"img_{i}"] = imgs[i - 1]
+                
     except Exception as e:
-        print(f"[ERRO no tratar_reserva_existente:] {edital.get('Link', '').strip()} - {e}")
+        logs.error(f"[ERRO no tratar_reserva_existente:] {edital.get('Link', '').strip()} - {e}")
 
 def tratar_reserva_sucesso(parte, ids, edital, hora_antes_iniciar_reserva):
     try: 
-        reservas_encontradas = re.findall(r"reserva:\s*(\d+)", parte)
-        ramos_encontrados = re.findall(r"ramo:\s*(\d+)", parte)
-
         formato = "%H:%M:%S"
-
         for i, id_val in enumerate(ids, start=1):
-            edital[f"link_reserva_{i}"] = id_val
             match_id_url = re.search(r"id=(\d+)", id_val)
             if not match_id_url:
                 continue
 
             id_extraido = match_id_url.group(1)
-            id_reserva = reservas_encontradas[i - 1] if i - 1 < len(reservas_encontradas) else None
-            ramo_id = ramos_encontrados[i - 1] if i - 1 < len(ramos_encontrados) else None
+            match_reserva = re.search(r"reserva:\s*(\d+)", parte)
+            id_reserva = match_reserva.group(1) if match_reserva else None
+            match_ramo = re.search(r"ramo:\s*(\d+)", parte)
+            ramo_id = match_ramo.group(1) if match_ramo else None
+            
+            if id_reserva == id_extraido:
+                edital[f"link_reserva_{i}"] = id_val
+                if ramo_id:
+                    edital[f"ramo_{i}"] = NOMES_RAMO.get(ramo_id, f"Ramo {ramo_id}")
+                if "data inclusao" in parte.lower():
+                    match = re.search(r'data inclusao:\s*\d{2}/\d{2}/\d{4}\s+(\d{2}:\d{2}:\d{2})', parte.lower())
+                    if match:
+                        edital[f"horario_arq_anexado_{i}"] = match.group(1)
+                        hora_anexo = match.group(1)
 
-            if ramo_id:
-                edital[f"ramo_{i}"] = NOMES_RAMO.get(ramo_id, f"Ramo {ramo_id}")
+                        hora_inicio = datetime.strptime(hora_antes_iniciar_reserva, formato)
+                        hora_termino = datetime.strptime(hora_anexo, formato)
+                        total_segundos = int((hora_termino - hora_inicio).total_seconds())
 
-            if id_reserva == id_extraido and "data inclusao" in parte.lower():
-                match = re.search(r'data inclusao:\s*\d{2}/\d{2}/\d{4}\s+(\d{2}:\d{2}:\d{2})', parte.lower())
-                if match:
-                    edital[f"horario_arq_anexado_{i}"] = match.group(1)
-                    hora_anexo = match.group(1)
-
-                    hora_inicio = datetime.strptime(hora_antes_iniciar_reserva, formato)
-                    hora_termino = datetime.strptime(hora_anexo, formato)
-                    total_segundos = int((hora_termino - hora_inicio).total_seconds())
-
-                    edital[f"diferença_inicio_anexo_{i}"] = str(timedelta(seconds=total_segundos))
+                        edital[f"diferença_inicio_anexo_{i}"] = str(timedelta(seconds=total_segundos))
                     
     except Exception as e:
-        print(f"[ERRO no tratar_reserva_sucesso:] {edital.get('Link', '').strip()} - {e}")
+        logs.error(f"[ERRO no tratar_reserva_sucesso:] {edital.get('Link', '').strip()} - {e}")
   
 def tratar_timeout(edital, error_timeout, ids_usuarios):
     """Gerencia erros de timeout e decide se continua ou pausa processamento."""
