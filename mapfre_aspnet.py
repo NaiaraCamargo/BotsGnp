@@ -402,11 +402,11 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 dados_acumulados["btnUpdate"] = "Novo"
                 
                 if dez_segundos:
-                    time.sleep(2)
+                    time.sleep(5)
                 if tentativas > 0:
                     soup_post, r_post, lbl_status = None, None, None
                     
-                time.sleep(5)
+                time.sleep(2)
                 horario_post = datetime.now().strftime("%H:%M:%S")
                 logs.warning(f">>>>>Entrou para enviar o post em: {horario_post}<<<<<<")
                 soup_post, r_post, info_post = processar_resquests_post(url_form, cookies, ASP_Net_headers, dados_acumulados)
@@ -677,7 +677,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital, id_reserva):
     except Exception as ex:
         logs.error("anexar_arquivos_mafre - Erro: %s", str(ex))
         return "Erro ao anexar arquivos caiu no except; "
-    
+
 def detectar_ramos(objeto_texto):
     texto = remover_acentos(objeto_texto.upper())
     encontrados = set()
@@ -685,13 +685,20 @@ def detectar_ramos(objeto_texto):
     for value, palavras in RAMOS.items():
         for palavra in palavras:
             palavra_normalizada = remover_acentos(palavra.upper())
-            pattern = r"\b{}\b".format(re.escape(palavra_normalizada))
+            
+            if value in RAMOS_COM_SEGURO:
+                # aceita: "SEGURO VIDA", "SEGURO DE VIDA", "SEGURO PARA VIDA"
+                pattern = r"\bSEGURO(?:\s+(?:DE|PARA))?\s+{}\b".format(re.escape(palavra_normalizada))
+            else:
+                # regra normal
+                pattern = r"\b{}\b".format(re.escape(palavra_normalizada))
+            
             if re.search(pattern, texto):
                 encontrados.add(value)
-                break  # Evita duplicidade do mesmo ramo
-            
+                break  # evita duplicidade do mesmo ramo
+
+    # regra especial do ramo 1 x 24
     if "1" in encontrados and "24" in encontrados:
-        # Verifica se o texto tem especificamente "AERONAUTICO CASCO" ou "DRONE e CASCO"
         if not re.search(r"\bAERONAUTICO CASCO\b", texto) and not re.search(r"\bDRONE E CASCO\b", texto):
             encontrados.discard("24")
                    
@@ -801,3 +808,6 @@ mapeamento_territorial = {
     "SC": "RIO GRANDE DO SUL",
     "SP": "SÃO PAULO CAPITAL",
 }
+
+# ramos que exigem "seguro de", "seguro para" ou "seguro X"
+RAMOS_COM_SEGURO = {"2", "3", "6", "9"}
