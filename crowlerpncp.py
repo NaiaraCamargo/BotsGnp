@@ -31,6 +31,7 @@ from PyPDF2 import PdfReader, PdfWriter
 
 # Imports de módulos locais
 from funcoespncp import *
+from funcoesmapfre import *
 from gerar_planilha import *
 from mapfre_aspnet import validar_criar_reserva, processar_pesquisa_licitacao, processar_login_mafre
 from repositoriopncp import *

@@ -522,18 +522,4 @@ def remover_acentos_ramos(texto):
         c for c in unicodedata.normalize('NFD', texto)
         if unicodedata.category(c) != 'Mn'
     )
-# Cria um dicionário com os nomes principais por código
-NOMES_RAMO = {
-    "1": "AUTOMÓVEIS",
-    "2": "PATRIMONIAL",
-    "3": "MASSIFICADOS",
-    "5": "AERONÁUTICO",
-    "6": "VIDA",
-    "9": "RESPONSABILIDADE CIVIL",
-    "20": "EMBARCAÇÃO",
-    "23": "AERONÁUTICO RETA",
-    "24": "AERONÁUTICO CASCO",
-    "25": "MÁQUINAS E EQUIPAMENTOS"
-}
-    
     
