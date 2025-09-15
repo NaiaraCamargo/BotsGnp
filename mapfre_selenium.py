@@ -1,7 +1,6 @@
 # Imports da biblioteca padrão
 import os
 import re
-import shutil
 from datetime import datetime
 from unidecode import unidecode
 from selenium.webdriver.common.by import By
@@ -12,14 +11,14 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
 # Imports de módulos locais
 from funcoespncp import *
+from funcoesmapfre import *
 from gerar_planilha import *
 from repositoriopncp import *
 from drivers import *
 from selenium.webdriver.support.ui import WebDriverWait
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-import imgkit
+
 
 # --- Aqui já define a função utilitária ---
 def wait_for_updatepanel(driver, timeout=10, stable_time=0.3):
@@ -93,9 +92,8 @@ def processar_login_mafre(driver_mapfre):
                         EC.presence_of_element_located((By.ID, "lblFormTitle"))
                     )
                     trocar_senha(driver_mapfre, password)
-                    return
-
                     print("🔁 Senha expirada, mas login continuará após troca.")
+                    return
 
                 except Exception:
                     print("❌ Falha no login")

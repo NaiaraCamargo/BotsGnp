@@ -156,6 +156,7 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
         url_pos_login = configuracoes.get("mafre", {}).get("url_pos_login")
         horario_inicio = datetime.now().strftime("%H:%M:%S")
         logs.warning(f">>>>>Entrou para processar mapfre: {horario_inicio}<<<<<<")
+        ##print(f">>>>>Entrou para processar mapfre: {horario_inicio}<<<<<<")
         cnpj_pesquisa = cnpj_formatado(edital.get("Cnpj", ""))
         cookies_list = driver_mapfre.get_cookies()
         cookies = {c['name']: c['value'] for c in cookies_list}
@@ -190,6 +191,8 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
         
         if info_filter:
             msg += f"Erro info_filter:{info_filter}"
+            return msg, links, imgs
+            
                 
         texto = r_filter.text 
         viewstate = pegar_hidden(texto, "__VIEWSTATE")
@@ -234,6 +237,7 @@ def processar_pesquisa_licitacao(driver_mapfre, edital, thread_download):
          
             if info_btn_licitacao:
                 msg += f"Erro info_btn_licitacao:{info_btn_licitacao}"
+                return msg, links, imgs
                
                 
             match = re.search(r'pageRedirect\|\|(.*?)\|', r_filter_btn_licitacao.text)
@@ -293,6 +297,7 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 
                 if info_incluir:
                     msg += f"Erro info_incluir:{info_incluir}"
+                    break
             
                 viewstate = pegar_hidden(texto_incluir, "__VIEWSTATE")
                 viewstategenerator = pegar_hidden(texto_incluir, "__VIEWSTATEGENERATOR")
@@ -362,6 +367,7 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 }
                 horario_post_campo = datetime.now().strftime("%H:%M:%S")
                 logs.warning(f">>>>>Entrou para enviar campo a campo em: {horario_post_campo}<<<<<<")
+                ##print(f">>>>>Entrou para enviar campo a campo em: {horario_post_campo}<<<<<<")
                 # 5. Montar payload do formulário
                 for lista_campos, lista_valores in campos:
                     for campo, valor in zip(lista_campos, lista_valores):
@@ -403,20 +409,23 @@ def cadastro_licitacao_form (edital, driver_mapfre, thread_download, idCliente, 
                 dados_acumulados["btnUpdate"] = "Novo"
                 
                 if dez_segundos:
-                    time.sleep(5)
+                    time.sleep(3)
                 if tentativas > 0:
                     soup_post, r_post, lbl_status = None, None, None
                     
-                time.sleep(2)
+                time.sleep(4)
                 horario_post = datetime.now().strftime("%H:%M:%S")
                 logs.warning(f">>>>>Entrou para enviar o post em: {horario_post}<<<<<<")
+                ##print(f">>>>>Entrou para enviar o post em: {horario_post}<<<<<<")
                 soup_post, r_post, info_post = processar_resquests_post(url_form, cookies, ASP_Net_headers, dados_acumulados)
                 
                 if info_post:
                     msg += info_post
+                    break
                     
                 horario_tmp = datetime.now().strftime("%H:%M:%S")
                 logs.warning(f">>>>>Enviou o post em: {horario_tmp}<<<<<<")
+                ##print(f">>>>>Enviou o post em: {horario_tmp}<<<<<<")
                 
                 lbl_status = soup_post.find("span", id="lblStatus")
                 if lbl_status:
@@ -550,18 +559,18 @@ def processar_requests_get(url, cookies, headers):
             return response_get.text, "Erro para pegara url no response;"
     except requests.exceptions.Timeout:
         logs.error(f"Erro: processar_requests_get Timeout na requisição. O servidor demorou demais para responder.")
-        return f"Erro: Timeout na requisição. O servidor demorou demais para responde;", [],[]
+        return "", f"Erro: Timeout na requisição. O servidor demorou demais para responde;"
     except requests.exceptions.SSLError as ssl_err:
         logs.error(f"Erro SSL processar_requests_com_tratamento: {ssl_err}")
-        return response_get.text, "Erro SSL;"
+        return "", "Erro SSL;"
     except requests.exceptions.ConnectionError as conn_err:
         logs.error(f"Erro de conexão processar_requests_com_tratamento: {conn_err}")
-        return response_get.text, "Erro de conexão;"
+        return "", "Erro de conexão;"
     except Exception as e:
         logs.error(f"Erro inesperado processar_requests_com_tratamento: {e}") 
-        return response_get.text, "Erro inesperado;"
+        return "", "Erro inesperado;"
     
-def processar_resquests_post(url, cookies, headers, data):
+def processar_resquests_post_old(url, cookies, headers, data):
     try:
         response_post = requests.post(url, cookies=cookies, headers=headers, data= data,  timeout=15, verify=certifi.where())
         if response_post.status_code == 200:
@@ -569,20 +578,56 @@ def processar_resquests_post(url, cookies, headers, data):
             return soup_post, response_post, ""
         else:
             logs.error(f"Erro para pegara url no response:{response_post.text}")
-            return f"Erro para pegara url no response;", response_post.text
+            return "", response_post.text, f"Erro para pegara url no response;"
     except requests.exceptions.Timeout:
         logs.error(f"Erro: Timeout na requisição. O servidor demorou demais para responder.")
-        return response_post.text, "Erro: Timeout na requisição. O servidor demorou demais para responde;"
+        return "","", "Erro: Timeout na requisição. O servidor demorou demais para responde;"
     except requests.exceptions.SSLError as ssl_err:
         logs.error(f"Erro SSL: {ssl_err}")
-        return response_post.text, "Erro SSL;",response_post.text
+        return "","", "Erro SSL;"
     except requests.exceptions.ConnectionError as conn_err:
         logs.error(f"Erro de conexão: {conn_err}")
-        return response_post.text, "Erro de conexão;", response_post.text
+        return "", "", "Erro de conexão;"
     except Exception as e:
         logs.error(f"Erro inesperado: {e}") 
-        return response_post.text, "Erro inesperado; ",response_post.text
+        return "","", "Erro inesperado;"
+    
+    
+def processar_resquests_post(url, cookies, headers, data):
+    inicio = time.time()
+    try:
+        with requests.post(
+            url,
+            cookies=cookies,
+            headers=headers,
+            data=data,
+            timeout=(5, 10),          # 5s p/ conectar, 10s p/ ler resposta
+            verify=certifi.where(),
+            stream=True               # força encerramento
+        ) as response_post:
+            if response_post.status_code == 200:
+                soup_post = BeautifulSoup(response_post.text, "html.parser")
+                return soup_post, response_post, ""
+            else:
+                logs.error(f"Erro para pegar a url no response: {response_post.text}")
+                return "", response_post.text, "Erro para pegar a url no response;"
 
+    except requests.exceptions.Timeout:
+        logs.error(f"Erro: Timeout na requisição. O servidor demorou demais para responder.")
+        return "", "", "Erro: Timeout na requisição. O servidor demorou demais para responder;"
+    except requests.exceptions.SSLError as ssl_err:
+        logs.error(f"Erro SSL: {ssl_err}")
+        return "", "", "Erro SSL;"
+    except requests.exceptions.ConnectionError as conn_err:
+        logs.error(f"Erro de conexão: {conn_err}")
+        return "", "", "Erro de conexão;"
+    except Exception as e:
+        logs.error(f"Erro inesperado: {e}")
+        return "", "", "Erro inesperado;"
+    finally:
+        fim = time.time()
+        logs.warning(f"[POST Tempo] {url} levou {fim - inicio:.2f}s")
+    
 def clicar_new_rerserva(soup_final, url_form, cookies, headers):
     try:  
         viewstate = soup_final.find(id="__VIEWSTATE")["value"]

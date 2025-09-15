@@ -435,6 +435,7 @@ def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, h
         fim = datetime.strptime(datetime.now().strftime("%H:%M:%S"), formato)
         total_segundos = int((fim - inicio).total_seconds())
         logs.warning(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
+        ##print(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
         edital["horario_termino"] = str(timedelta(seconds=int((fim - inicio).total_seconds())))
 
         if not resultado_queue.empty():

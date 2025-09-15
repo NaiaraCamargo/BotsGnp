@@ -4,30 +4,36 @@ from funcoespncp import *
 
 
 def detectar_ramos(objeto_texto):
-    texto = remover_acentos(objeto_texto.upper())
-    encontrados = set()
-    
-    for value, palavras in RAMOS.items():
-        for palavra in palavras:
-            palavra_normalizada = remover_acentos(palavra.upper())
-            
-            if value in RAMOS_COM_SEGURO:
-                # aceita "SEGURO VIDA", "SEGURO DE VIDA", "SEGURO PARA OS IMOVEIS" etc.
-                pattern = r"\bSEGURO(?:\s+\w+){0,3}\s+{}\b".format(re.escape(palavra_normalizada))
-            else:
-                # regra normal
-                pattern = r"\b{}\b".format(re.escape(palavra_normalizada))
-            
-            if re.search(pattern, texto):
-                encontrados.add(value)
-                break  # evita duplicidade do mesmo ramo
+    try:
+        texto = remover_acentos(objeto_texto.upper())
+        encontrados = set()
+        
+        for value, palavras in RAMOS.items():
+            for palavra in palavras:
+                palavra_normalizada = remover_acentos(palavra.upper())
+                
+                if value in RAMOS_COM_SEGURO:
+                    # aceita "SEGURO VIDA", "SEGURO DE VIDA", "SEGURO PARA OS IMOVEIS" etc.
+                    pattern = r"\bSEGUR\w*(?:\s+\w+){{0,3}}\s+{}\b".format(re.escape(palavra_normalizada))
+                    
+                else:
+                    # regra normal
+                    pattern = r"\b{}\b".format(re.escape(palavra_normalizada))
+                
+                if re.search(pattern, texto):
+                    encontrados.add(value)
+                    break  # evita duplicidade do mesmo ramo
 
-    # regra especial do ramo 1 x 24
-    if "1" in encontrados and "24" in encontrados:
-        if not re.search(r"\bAERONAUTICO CASCO\b", texto) and not re.search(r"\bDRONE E CASCO\b", texto):
-            encontrados.discard("24")
-                   
-    return encontrados
+        # regra especial do ramo 1 x 24
+        if "1" in encontrados and "24" in encontrados:
+            if not re.search(r"\bAERONAUTICO CASCO\b", texto) and not re.search(r"\bDRONE E CASCO\b", texto):
+                encontrados.discard("24")
+                    
+        return encontrados
+
+    except Exception as ex:
+            logs.error("detectar_ramos - Erro: %s", str(ex))
+            return ""  
 
 def validar_criar_reserva(edital):
     try:
@@ -69,28 +75,6 @@ def validar_criar_reserva(edital):
         return "Erro ao validar reserva se atende requisitos, caiu no except;"  
 
 RAMOS = {
-    # AERONÁUTICO
-    "5": [
-        "AERONÁUTICO", "AERONÁUTICOS",
-        "DRONE", "DRONES",
-        "AERONAVE", "AERONAVES"
-    ],
-
-    # AERONÁUTICO CASCO
-    "24": [
-        "CASCO", "CASCOS",
-        "AERONÁUTICO CASCO", "AERONÁUTICOS CASCOS",
-        "DRONE E CASCO", "DRONES E CASCOS"
-    ],
-
-    # AERONÁUTICO RETA
-    "23": [
-        "RETA", "RETAS",
-        "R.E.T.A", "R.E.T.AS",
-        "AERONÁUTICO E R.E.T.A", "AERONÁUTICOS E R.E.T.AS",
-        "DRONE E R.E.T.A", "DRONES E R.E.T.AS"
-    ],
-
     # AUTOMÓVEIS
     "1": [
         "FROTA", "FROTAS",
@@ -109,14 +93,7 @@ RAMOS = {
         "MAQUINA", "MAQUINAS",
         "MÁQUINA", "MÁQUINAS"
     ],
-
-    # CASCO MARÍTIMO-EMBARCAÇÃO
-    "20": [
-        "MARÍTIMO", "MARÍTIMOS",
-        "BARCO", "BARCOS",
-        "EMBARCAÇÃO", "EMBARCAÇÕES"
-    ],
-
+    
     # DIFERENCIADOS (> 30 MI)
     "2": [
         "PRÉDIO", "PRÉDIOS",
@@ -129,20 +106,7 @@ RAMOS = {
         "IMOBILIÁRIO", "IMOBILIÁRIOS",
         "LOCAL", "LOCAIS"
     ],
-
-    # MÁQUINAS E EQUIPAMENTOS
-    "25": [
-        "MAQUINA", "MAQUINAS",
-        "MÁQUINA", "MÁQUINAS",
-        "EQUIPAMENTO", "EQUIPAMENTOS",
-        "TRATOR", "TRATORES",
-        "ESCAVADEIRA", "ESCAVADEIRAS",
-        "ROLO COMPACTADOR", "ROLOS COMPACTADORES",
-        "RETROESCAVADEIRA", "RETROESCAVADEIRAS",
-        "PATROLA", "PATROLAS"
-    ],
-
-    # MASSIFICADOS (< 30 MI)
+     # MASSIFICADOS (< 30 MI)
     "3": [
         "PRÉDIO", "PRÉDIOS",
         "PREDIAL", "PREDIAIS",
@@ -154,12 +118,12 @@ RAMOS = {
         "IMOBILIÁRIO", "IMOBILIÁRIOS",
         "LOCAL", "LOCAIS"
     ],
-
-    # RESPONSABILIDADE CIVIL
-    "9": [
-        "RESPONSABILIDADE CIVIL", "RESPONSABILIDADES CIVIS"
+     # AERONÁUTICO
+    "5": [
+        "AERONÁUTICO", "AERONÁUTICOS",
+        "DRONE", "DRONES",
+        "AERONAVE", "AERONAVES"
     ],
-
     # VIDA
     "6": [
         "VIDA", "VIDAS",
@@ -172,7 +136,40 @@ RAMOS = {
         "ALUNO", "ALUNOS",
         "FUNERAL", "FUNERAIS"
     ],
-
+   # RESPONSABILIDADE CIVIL
+    "9": [
+        "RESPONSABILIDADE CIVIL", "RESPONSABILIDADES CIVIS"
+    ],
+    # CASCO MARÍTIMO-EMBARCAÇÃO
+    "20": [
+        "MARÍTIMO", "MARÍTIMOS",
+        "BARCO", "BARCOS",
+        "EMBARCAÇÃO", "EMBARCAÇÕES"
+    ],
+    # AERONÁUTICO RETA
+    "23": [
+        "RETA", "RETAS",
+        "R.E.T.A", "R.E.T.AS",
+        "AERONÁUTICO E R.E.T.A", "AERONÁUTICOS E R.E.T.AS",
+        "DRONE E R.E.T.A", "DRONES E R.E.T.AS"
+    ],    
+    # AERONÁUTICO CASCO
+    "24": [
+        "CASCO", "CASCOS",
+        "AERONÁUTICO CASCO", "AERONÁUTICOS CASCOS",
+        "DRONE E CASCO", "DRONES E CASCOS"
+    ],
+    # MÁQUINAS E EQUIPAMENTOS
+    "25": [
+        "MAQUINA", "MAQUINAS",
+        "MÁQUINA", "MÁQUINAS",
+        "EQUIPAMENTO", "EQUIPAMENTOS",
+        "TRATOR", "TRATORES",
+        "ESCAVADEIRA", "ESCAVADEIRAS",
+        "ROLO COMPACTADOR", "ROLOS COMPACTADORES",
+        "RETROESCAVADEIRA", "RETROESCAVADEIRAS",
+        "PATROLA", "PATROLAS"
+    ], 
     # D&O
     "27": ["D&O"]
 }
@@ -216,7 +213,7 @@ mapeamento_territorial = {
 }
 
 # ramos que exigem "seguro de", "seguro para" ou "seguro X"
-RAMOS_COM_SEGURO = {"2", "3", "6", "9"}
+RAMOS_COM_SEGURO = {"2", "3", "6", "9", "23", "25"}
 
 # Cria um dicionário com os nomes principais por código
 NOMES_RAMO = {
