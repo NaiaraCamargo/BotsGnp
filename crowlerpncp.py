@@ -33,10 +33,11 @@ from PyPDF2 import PdfReader, PdfWriter
 from funcoespncp import *
 from funcoesmapfre import *
 from gerar_planilha import *
-from mapfre_aspnet import validar_criar_reserva, processar_pesquisa_licitacao, processar_login_mafre
+from mapfre_selenium import validar_criar_reserva, processar_pos_login, processar_login_mafre
 from repositoriopncp import *
 from drivers import *
 from threading import Lock
+import ollama
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
@@ -188,7 +189,7 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
 
         if  total_itens == registros:
             print(f"Execução interrormpida pelo processo de Heurística - {registros}/{total_itens}\n")
-            return  # Interrormpe o processo se a heurística for atendida
+            return 
         
         retorno_elemento = driver.find_elements(By.CLASS_NAME, value='br-list')
         listaElementos.append(retorno_elemento[:])
@@ -316,7 +317,19 @@ def processar_texto(texto, plataforma, driver, driver_mapfre, urlBase, id_pagina
     if plataforma == "obra" and not validar_modalidade_obras(texto):
         return None, error_timeout
     
-    palavras_destacadas = validar_texto(texto, filtrosBase)
+    if plataforma == "obra":
+        palavras_destacadas = validar_texto(texto, filtrosBase)
+        
+    if plataforma == "pncp":
+        json_str = classificar_licitacao(texto)
+
+        # Converte string JSON em dicionário Python
+        data = json.loads(json_str)
+
+        # Agora você pode pegar cada valor em variáveis
+        relevante = data["relevante"]
+        ramo = data["ramo"]
+        ramo_id = data["ramo_id"]
     
     if not palavras_destacadas and plataforma != "obra":
         return None, error_timeout
@@ -422,7 +435,7 @@ def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, h
         resultado_queue = queue.Queue()
         def chamar_inicializar_pagina():
             with lock_pos_login:
-                msg, ids, imgs = processar_pesquisa_licitacao(driver_mapfre, edital, thread_download)
+                msg, ids, imgs = processar_pos_login(driver_mapfre, edital, thread_download)
                 resultado_queue.put((msg, ids, imgs))
 
         thread_mapfre = threading.Thread(target=chamar_inicializar_pagina)
@@ -585,6 +598,28 @@ def validar_texto(texto, filtrosBase):
         palavras_encontradas.extend([w.strip(string.punctuation) for w in palavras if unidecode(w.lower()).startswith(palavra_chave)])
 
     return palavras_encontradas
+
+def classificar_licitacao(descricao: str):
+    prompt = f"""
+    Você é um classificador de editais de licitação para corretoras de seguros.
+    Leia a descrição abaixo e responda SOMENTE em JSON no formato:
+
+    {{
+      "relevante": true/false,
+      "ramo": "AUTOMÓVEIS | DIFERENCIADOS | MASSIFICADOS | AERONÁUTICO | VIDA | RESPONSABILIDADE CIVIL | CASCO MARÍTIMO-EMBARCAÇÃO | AERONÁUTICO RETA | AERONÁUTICO CASCO | MAQUINAS E EQUIPAMENTOS | D&O | null",
+      "ramo_id": 1 | 2 | 3 | 5 | 6 | 9 | 20 | 23 | 24 | 25 | 27 | null
+    }}
+
+    Descrição: {descricao}
+    """
+
+    resposta = ollama.chat(
+        model="llama3:8b",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return resposta["message"]["content"]
+
 
 def destacar_palavras(texto, palavras):
 

@@ -21,22 +21,29 @@ from urllib.parse import urljoin
 
 
 # --- Aqui já define a função utilitária ---
-def wait_for_updatepanel(driver, timeout=10, stable_time=0.3):
-    """Aguarda o DOM ficar estável (sem mudanças) por stable_time segundos consecutivos."""
+def wait_for_dom_stable(driver, timeout=10, stable_time=0.3):
+    """
+    Aguarda o DOM ficar estável (sem mudanças) por stable_time segundos consecutivos.
+    """
     start_time = time.time()
     last_html = driver.page_source
     last_change = time.time()
 
     while time.time() - start_time < timeout:
-        time.sleep(0.1)
-        current_html = driver.page_source
+        time.sleep(0.2)  # um pouco maior para reduzir CPU
+        try:
+            current_html = driver.page_source
+        except Exception:
+            # Se a página está em transição, ignora e continua
+            continue
+
         if current_html != last_html:
             last_change = time.time()
             last_html = current_html
         elif time.time() - last_change >= stable_time:
-            return  # DOM está estável por stable_time segundos
+            return True  # DOM está estável
 
-    raise TimeoutError("Timeout esperando UpdatePanel ou DOM estabilizar.")
+    raise TimeoutError("Timeout esperando o DOM estabilizar.")
 
 # --- Se ainda não tiver, defina essa também ---
 def wait_until_input_ready(driver, by, value, timeout=15):
@@ -164,7 +171,7 @@ def processar_pos_login(driver_mapfre, edital, thread_download):
             filtro_pesquisa = form_screen.find_element(By.ID, "cmbFilter")
             select_filtro = Select(filtro_pesquisa)
             select_filtro.select_by_value("cpf_cnpj")
-            wait_for_updatepanel(driver_mapfre)
+            wait_for_dom_stable(driver_mapfre)
 
             ##wait_until_input_ready(driver_mapfre, By.ID, "txtFilter")
             form_screen = WebDriverWait(driver_mapfre, 20).until(
@@ -199,7 +206,7 @@ def processar_pos_login(driver_mapfre, edital, thread_download):
                 driver_mapfre.execute_script("arguments[0].click();", botao_filter)     
                 WebDriverWait(driver_mapfre, 15).until(EC.staleness_of(botao_filter))        
             try: 
-                wait_for_updatepanel(driver_mapfre)
+                wait_for_dom_stable(driver_mapfre)
                 grd_cliente = WebDriverWait(driver_mapfre, 30).until(
                     EC.presence_of_element_located((By.ID, 'grdCliente'))
                 )
@@ -219,7 +226,7 @@ def processar_pos_login(driver_mapfre, edital, thread_download):
                 if status:
                     msg, links, imgs = preencher_form_licitacao(driver_mapfre, edital, thread_download)
                 else:
-                    msg += "Erro ao tentar clicar em incluir reserva; "
+                    msg += "Erro ao tentar clicar em incluir reserva;"
                 return msg, links, imgs
                 
             except Exception as ex:
@@ -228,14 +235,14 @@ def processar_pos_login(driver_mapfre, edital, thread_download):
                 tentativas += 1
                 if tentativas >= max_tentativas:
                     logs.error("processar_pos_login - ", str(ex))
-                    return "NÃO HÁ REGISTRO PARA ESSE CNPJ; ", [], [] 
+                    return "NÃO HÁ REGISTRO PARA ESSE CNPJ;", [], [] 
                 
         except Exception as ex:
             tentativas += 1
             logs.error("processar_pos_login - ", str(ex))
             if tentativas >= max_tentativas:
                 logs.error("processar_pos_login - ", str(ex))
-                return "Erro ao processar pagina pos login; ", [], []
+                return "Erro ao processar pagina pos login;", [], []
     
 
 def clicar_new_rerserva(driver_mapfre):
@@ -267,7 +274,7 @@ def clicar_new_rerserva(driver_mapfre):
             tentativas += 1
             if tentativas >= max_tentativas:
                 logs.error("clicar_new_rerserva - ", str(ex))
-                return "Erro ao clicar em inculir nova reserva; ", [], []
+                return "Erro ao clicar em inculir nova reserva;", [], []
     
 
 def corrigir_campos_vermelhos(driver_mapfre, valores_formulario):
@@ -287,27 +294,48 @@ def corrigir_campos_vermelhos(driver_mapfre, valores_formulario):
             if campo_id in valores_formulario:
                 try:
                     valor = valores_formulario[campo_id]
-                    form_licitacao = WebDriverWait(driver_mapfre, 40).until(
-                        EC.presence_of_element_located((By.ID, "uptPnlForm"))
+                    form = WebDriverWait(driver_mapfre, 40).until(
+                            EC.presence_of_element_located((By.ID, "uptPnlForm"))
                     )
-                    elemento = form_licitacao.find_element(By.ID, campo_id)
+                    wait_for_dom_stable(driver_mapfre)
+                    elemento = WebDriverWait(driver_mapfre, 40).until(
+                        EC.element_to_be_clickable((By.ID, campo_id))
+                    )
+                    wait_for_dom_stable(driver_mapfre)
 
                     if elemento.tag_name == "select":
                         elemento.clear()
+                        elemento = WebDriverWait(driver_mapfre, 40).until(
+                        EC.element_to_be_clickable((By.ID, campo_id))
+                        )
                         select = Select(elemento)
                         select.select_by_value(valor)
+                        elemento = WebDriverWait(driver_mapfre, 40).until(
+                        EC.element_to_be_clickable((By.ID, campo_id))
+                        )
                         elemento.send_keys(Keys.TAB)
                     else:
                         elemento.clear()
+                        elemento = WebDriverWait(driver_mapfre, 40).until(
+                        EC.element_to_be_clickable((By.ID, campo_id))
+                        )
                         elemento.send_keys(valor)
+                        elemento = WebDriverWait(driver_mapfre, 40).until(
+                        EC.element_to_be_clickable((By.ID, campo_id))
+                        )
                         elemento.send_keys(Keys.TAB)  
                 except Exception as e:
                     logs.warning(f"Falha ao corrigir campo {campo_id}: {e}")
                     print(f"⚠️ Falha ao corrigir campo {campo_id}: {e}")
 
         try:
-            botao_gravar = form_licitacao.find_element(By.ID, "btnUpdate")
-            driver_mapfre.execute_script("arguments[0].focus(); arguments[0].click();", botao_gravar)
+            form_licitacao = WebDriverWait(driver_mapfre, 40).until(
+                EC.presence_of_element_located((By.ID, "uptPnlForm"))
+            )
+            botao_gravar = WebDriverWait(driver_mapfre, 40).until(
+                EC.element_to_be_clickable((By.ID, "btnUpdate"))
+            )
+            botao_gravar.click()  
             WebDriverWait(driver_mapfre, 20).until(EC.staleness_of(botao_gravar))
         except Exception as e:
                 logs.warning(f"Erro ao clicar em Gravar: {e}")
@@ -370,7 +398,7 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
             
         if not ramos_valores:
             logs.warning("Nenhum ramo identificado no objeto: '%s' | Link: %s", edital.get("objeto", ""), edital.get("Link", ""))
-            msg += f"Edital nao Cadastrado (Ramo nao detectado); "
+            msg += f"Edital nao Cadastrado (Ramo nao detectado);"
             return msg , links, imgs
         
         # Ajuste nos ramos 2 e 3 com base na capital
@@ -391,7 +419,7 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
         else:
             modalidade_valor = licitacao
             
-        uf_sigla = edital.get("UF", "").strip().upper()
+        uf_sigla = edital.get("Uf", "").strip().upper()
         territorial_valor = mapeamento_territorial.get(uf_sigla, "")
 
 
@@ -414,7 +442,7 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
                 if status:
                     print("🔁 Nova reserva aberta:", status_texto)
                 else:
-                    msg = f"Erro ao tentar incluir nova reserva para o ramo:{ramo}; "
+                    msg = f"Erro ao tentar incluir nova reserva para o ramo:{ramo};"
                     continue
             try: 
                 form_licitacao = WebDriverWait(driver_mapfre, 40).until(
@@ -440,19 +468,27 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
                         form = WebDriverWait(driver_mapfre, 40).until(
                             EC.presence_of_element_located((By.ID, "uptPnlForm"))
                         )
-                        elemento = form.find_element(By.ID, campo_id)
-                        
+                        wait_for_dom_stable(driver_mapfre)
+                        elemento = WebDriverWait(driver_mapfre, 40).until(
+                            EC.element_to_be_clickable((By.ID, campo_id))
+                        )
+                        wait_for_dom_stable(driver_mapfre)
                         if elemento.tag_name == "select":
                             try:
                                 select = Select(elemento)
                                 select.select_by_value(valor)
-                                elemento.send_keys(Keys.TAB)
-                                wait_for_updatepanel(driver_mapfre)
-                            except:
-                                form2 = WebDriverWait(driver_mapfre, 40).until(
-                                    EC.presence_of_element_located((By.ID, "uptPnlForm"))
+                                elemento = WebDriverWait(driver_mapfre, 40).until(
+                                    EC.presence_of_element_located((By.ID, campo_id))
                                 )
-                                elemento2 = form2.find_element(By.ID, campo_id)
+                                driver_mapfre.execute_script("""
+                                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                                    arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));
+                                """, elemento)
+                                wait_for_dom_stable(driver_mapfre)
+                            except:
+                                elemento2 =  WebDriverWait(driver_mapfre, 40).until(
+                                    EC.element_to_be_clickable((By.ID, campo_id))
+                                )
                                 driver_mapfre.execute_script("""
                                     let select = arguments[0];
                                     let value = arguments[1];
@@ -465,29 +501,42 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
                                     var evt = new Event('change', { bubbles: true });
                                     select.dispatchEvent(evt);
                                 """, elemento2, valor)
+                                wait_for_dom_stable(driver_mapfre)
                         else:
                             try:
-                                elemento.send_keys(valor)
-                                elemento.send_keys(Keys.TAB) 
-                                wait_for_updatepanel(driver_mapfre)
-                            except:
-                                form2 = WebDriverWait(driver_mapfre, 40).until(
-                                    EC.presence_of_element_located((By.ID, "uptPnlForm"))
+                                if modalidade_valor == "DISPENSA ELETRÔNICA":
+                                    elemento.clear()
+                                    
+                                elemento = WebDriverWait(driver_mapfre, 20).until(
+                                    EC.element_to_be_clickable((By.ID, campo_id))
                                 )
-                                elemento2 = form2.find_element(By.ID, campo_id)
+                                driver_mapfre.execute_script("arguments[0].focus();", elemento)
+                                elemento.send_keys(valor)
+                                elemento = WebDriverWait(driver_mapfre, 20).until(
+                                    EC.element_to_be_clickable((By.ID, campo_id))
+                                )
+                                driver_mapfre.execute_script("""
+                                    arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                                    arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                                    arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));
+                                """, elemento)
+                                wait_for_dom_stable(driver_mapfre)
+                            except:
+                                elemento2 = WebDriverWait(driver_mapfre, 20).until(
+                                    EC.element_to_be_clickable((By.ID, campo_id))
+                                )
                                 driver_mapfre.execute_script("arguments[0].value = arguments[1];", elemento2, valor)
-
                                 driver_mapfre.execute_script("""
                                     var evt = document.createEvent('HTMLEvents');
                                     evt.initEvent('change', true, true);
                                     arguments[0].dispatchEvent(evt);
                                 """, elemento2)
+                                wait_for_dom_stable(driver_mapfre)
                                                         
                     except Exception as e:
                         print(f"Campo {campo_id} não preenchido: {e}")
                         logs.warning(f"Campo {campo_id} não preenchido: {e}")
 
-                time.sleep(9)
                 form_licitacao = WebDriverWait(driver_mapfre, 40).until(
                     EC.presence_of_element_located((By.ID, "uptPnlForm"))
                 )
@@ -545,10 +594,10 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
                         except Exception as ex:
                             print("Erro ao tirar print reserva perdida - ", str(ex))
                             logs.error(f"Erro ao tirar print reserva perdida - {ex}")
-                            msg += f"Erro ao tentar tirar print reserva pertida"
+                            msg += f"Erro ao tentar tirar print reserva pertida;"
                             pass
                         
-                        msg += f"Reserva já cadastrada reserva: {id_reserva}, ramo: {ramo}, CNPJ: {edital['Cnpj']}" 
+                        msg += f"Reserva já cadastrada reserva: {id_reserva}, ramo: {ramo}, CNPJ: {edital['Cnpj']};" 
                         print(f"⚠️ Já existe reserva cadastrada: {id_reserva}")
                         logs.warning("Reserva já cadastrada para o número %s - Link: %s", id_reserva, edital.get("Link", ""))
 
@@ -583,14 +632,14 @@ def preencher_form_licitacao(driver_mapfre, edital, thread_download):
                 if len(ramos_valores) > 1:
                     print("🔁 Tentando próximo ramo...")
                     
-                    msg += f"Erro ao gravar reserva no Mapfre para o ramo:{nome_ramo}, no edital CNPJ: {edital['Cnpj']}, Link: {edital['Link']}; "
+                    msg += f"Erro ao gravar reserva no Mapfre para o ramo:{nome_ramo}, no edital CNPJ: {edital['Cnpj']}, Link: {edital['Link']};"
                     continue # volta para o próximo ramo
                 else:
-                    msg += f"Erro ao gravar reserva no Mapfre para o ramo:{nome_ramo}, no edital CNPJ: {edital['Cnpj']}, Link: {edital['Link']}; "
+                    msg += f"Erro ao gravar reserva no Mapfre para o ramo:{nome_ramo}, no edital CNPJ: {edital['Cnpj']}, Link: {edital['Link']};"
                     return msg, "", []
                 
         if not links:
-            msg += f"Nenhum ramo foi cadastrado com sucesso.; "
+            msg += f"Nenhum ramo foi cadastrado com sucesso;"
             return msg, links, imgs
         
         return msg, links, imgs
@@ -606,7 +655,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
 
         if not caminho_arquivos:
             logs.warning(f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')}")
-            return f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')}\n"
+            return f"Caminho dos arquivos em branco para o edital: {edital.get('Link', '')};"
 
         arquivos = [
             f for f in os.listdir(caminho_arquivos)
@@ -615,7 +664,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
 
         if not arquivos:
             logs.warning(f"Diretório sem arquivos: {caminho_arquivos} - Link: {edital.get('Link', '')}")
-            return f"Nenhum arquivo encontrado em: {caminho_arquivos} - Edital: {edital.get('Link', '')}\n"
+            return f"Nenhum arquivo encontrado em: {caminho_arquivos} - Edital: {edital.get('Link', '')};"
 
         WebDriverWait(driver_mapfre, 20).until(
             EC.presence_of_all_elements_located((By.ID, "uptPnlForm"))
@@ -638,7 +687,7 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
             caminho_item = os.path.join(caminho_arquivos, arquivos[0])
 
         if not caminho_item:
-            return "Nenhum arquivo válido encontrado para envio.;"
+            return "Nenhum arquivo válido encontrado para envio;"
 
         botao_escolher_arquivos.send_keys(caminho_item)
 
@@ -658,13 +707,13 @@ def anexar_arquivos_mafre(driver_mapfre, edital):
             )
             
             data_inclusao_arquivo = data_inclusao_arquivo_element.text.strip()
-            return f"Sucesso ao gravar anexo, data inclusao: {data_inclusao_arquivo}; "
+            return f"Sucesso ao gravar anexo, data inclusao: {data_inclusao_arquivo};"
         else:
             return status_texto
 
     except Exception as ex:
         logs.error("anexar_arquivos_mafre - Erro: %s", str(ex))
-        return "Erro ao anexar arquivos caiu no except; "
+        return "Erro ao anexar arquivos caiu no except;"
     
 def detectar_ramos(objeto_texto):
     texto = remover_acentos(objeto_texto.upper())

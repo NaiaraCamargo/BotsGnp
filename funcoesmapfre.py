@@ -1,11 +1,20 @@
 from datetime import datetime
 import re
+import string
 from funcoespncp import *
+import unicodedata
 
+
+# Função para limpar HTML e pontuação, deixar maiúsculo
+def limpar_texto(texto):
+    texto = re.sub(r'<.*?>', ' ', texto)          # remove tags HTML
+    texto = texto.translate(str.maketrans('', '', string.punctuation))  # remove pontuação
+    texto = remover_acentos(texto)                # remove acentos
+    return texto.upper()     
 
 def detectar_ramos(objeto_texto):
     try:
-        texto = remover_acentos(objeto_texto.upper())
+        texto = limpar_texto(objeto_texto)
         encontrados = set()
         
         for value, palavras in RAMOS.items():
@@ -14,11 +23,12 @@ def detectar_ramos(objeto_texto):
                 
                 if value in RAMOS_COM_SEGURO:
                     # aceita "SEGURO VIDA", "SEGURO DE VIDA", "SEGURO PARA OS IMOVEIS" etc.
-                    pattern = r"\bSEGUR\w*(?:\s+\w+){{0,3}}\s+{}\b".format(re.escape(palavra_normalizada))
-                    
+                    pattern = r'\bSEGUR\w*(?:\s+\w+){{0,3}}\s+{}(?:\s+\w+)*'.format(
+                        re.escape(palavra_normalizada)
+                    )              
                 else:
                     # regra normal
-                    pattern = r"\b{}\b".format(re.escape(palavra_normalizada))
+                    pattern = r"\b{}\b".format(re.escape(palavra_normalizada))        
                 
                 if re.search(pattern, texto):
                     encontrados.add(value)

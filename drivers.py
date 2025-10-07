@@ -68,30 +68,36 @@ def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
         raise result
     return result
 
-def encerrar_driver_com_timeout(driver, timeout: int = 5):
+def encerrar_driver_com_timeout(driver, timeout: int = 15):
     """
-    Encerra o WebDriver em uma thread separada com timeout.
-    Evita travamento do programa caso driver.quit() não retorne.
+    Encerra o WebDriver em thread separada com timeout.
+    Minimiza arquivos temporários e evita travamentos do programa.
     """
     def fechar_driver():
         try:
             driver.quit()
         except Exception:
-           pass  
+            pass
 
-    thread = threading.Thread(target=fechar_driver, daemon=True)
+    thread = threading.Thread(target=fechar_driver)
     thread.start()
     thread.join(timeout)
 
     if thread.is_alive():
         try:
-            pid = driver.service.process.pid
-            psutil.Process(pid).kill()
+            if driver.service and driver.service.process:
+                pid = driver.service.process.pid
+                process = psutil.Process(pid)
+                for child in process.children(recursive=True):
+                    child.kill()  # Mata subprocessos do ChromeDriver
+                process.kill()
         except Exception:
             pass
+
+    # Pequena pausa para garantir que arquivos temporários sejam liberados
+    time.sleep(0.5)
         
 def criar_driver(mostrar_browser=False):
-      # Cria um diretório temporário para perfil isolado
     profile_dir = tempfile.mkdtemp()
     chrome_options = Options()
     chrome_options.add_argument(f"--user-data-dir={profile_dir}")
