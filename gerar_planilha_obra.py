@@ -155,16 +155,11 @@ def criar_excel_registros(plataforma):
         workbook = xlsxwriter.Workbook(str(plataforma) + '_new_registros.xlsx')
         worksheet = workbook.add_worksheet()
        
-        if plataforma == 'obra':    
-            #  Nome da coluna, Tamanho da célula  
-            dados = (['Situação', 10],['Licitação', 10],['CNPJ', 15],['Órgão', 20],['Estado', 10],['UASG', 10],['Número', 10],
-                      ['Número Aux', 10], ['Data de Abertura', 10], ['Hora', 10], ['Modalidade de Disputa', 20], ['N° Itens', 10], 
-                      ['Valor Estimado', 10], ['Link', 50],['Link Auxiliar', 50],  ['Descrição', 30])     
-        else:
-            #  Nome da coluna, Tamanho da célula
-            dados = (['Data Inicio', 10], ['Data Fim', 10], ['CNPJ', 15], ['Órgão', 20], ['Número', 10], ['Data Divulgação', 10], 
-                     ['Valor Estimado', 10], ['Link', 50])
-             
+        #  Nome da coluna, Tamanho da célula  
+        dados = (['Situação', 10],['Licitação', 10],['CNPJ', 15],['Órgão', 20],['Estado', 10],['UASG', 10],['Número', 10],
+                    ['Número Aux', 10], ['Data de Abertura', 10], ['Hora', 10], ['Modalidade de Disputa', 20], ['N° Itens', 10], 
+                    ['Valor Estimado', 10], ['Link', 50],['Link Auxiliar', 50],  ['Descrição', 30])     
+    
         cabecalho = ()
         for d in dados:
             cabecalho = cabecalho + (d[0],)
@@ -184,45 +179,29 @@ def criar_excel_registros(plataforma):
 def adicionar_registros(processos, arquivo, plataforma):
     try:
         df = pd.read_excel(arquivo)
-        if plataforma == 'obra':    
-            for processo in processos:
-                registros = pd.DataFrame({
-                    'Situação': [processo.get('Situacao')],
-                    'Licitação': [processo.get('Licitacao')],
-                    'CNPJ': [processo.get('Cnpj')],
-                    'Órgão': [processo.get('Orgao')],
-                    'Estado': [processo.get('Uf')],
-                    'UASG': [processo.get('CodigoUnidadeCompradora')],
-                    'Número': [processo.get('Numero')],
-                    'Número Aux': [processo.get('NumeroAux')],
-                    'Data de Abertura': [processo.get('DataFim')],
-                    'Hora': [processo.get('HoraFim')],
-                    'Modalidade de Disputa': [processo.get('ModoDeDisputa')],
-                    'N° Itens': [processo.get('QuantidadeItens')],
-                    'Valor Estimado': [processo.get('ValorTotalEstimadoCompra')],
-                    'Link': [processo.get('Link')],
-                    'Link Auxiliar': [processo.get('LinkBotao')],
-                    'Descrição': [processo.get('Descricao')]
-                })
+       
+        for processo in processos:
+            registros = pd.DataFrame({
+                'Situação': [processo.get('Situacao')],
+                'Licitação': [processo.get('Licitacao')],
+                'CNPJ': [processo.get('Cnpj')],
+                'Órgão': [processo.get('Orgao')],
+                'Estado': [processo.get('Uf')],
+                'UASG': [processo.get('CodigoUnidadeCompradora')],
+                'Número': [processo.get('Numero')],
+                'Número Aux': [processo.get('NumeroAux')],
+                'Data de Abertura': [processo.get('DataFim')],
+                'Hora': [processo.get('HoraFim')],
+                'Modalidade de Disputa': [processo.get('ModoDeDisputa')],
+                'N° Itens': [processo.get('QuantidadeItens')],
+                'Valor Estimado': [processo.get('ValorTotalEstimadoCompra')],
+                'Link': [processo.get('Link')],
+                'Link Auxiliar': [processo.get('LinkBotao')],
+                'Descrição': [processo.get('Descricao')]
+            })
 
-                df = pd.concat([df, registros], ignore_index=True)
-
-        else:
-            for processo in processos:
-                registros = pd.DataFrame({
-                    'Data Inicio': [processo.get('DataInicioRecebimentoProposta')],
-                    'Data Fim': [processo.get('DataFimRecebimentoProposta')],
-                    'CNPJ': [processo.get('Cnpj')],
-                    'Órgão': [processo.get('Orgao')],
-                    'Número': [processo.get('Numero')],
-                    'Data Divulgação': [processo.get('Data')],
-                    'Valor Estimado': [processo.get('ValorTotalEstimadoCompra')],
-                    'Link': [processo.get('Link')]
-                })
-
-                df = pd.concat([df, registros], ignore_index=True)
-         
-                         
+            df = pd.concat([df, registros], ignore_index=True)
+                     
         df.to_excel(arquivo, index=False)
     except Exception as e:
         print(e)

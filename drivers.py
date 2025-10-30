@@ -124,14 +124,12 @@ def criar_driver(mostrar_browser=False):
 def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
     try:
         if processar_dia and 5 <= hora_atual < 9:
-            if plataforma == "obra":
-                 # Substitui o trecho &tam_pagina=XX por &tam_pagina=50
-                url = url_base.replace(
-                    next((part for part in url_base.split('&') if part.startswith('tam_pagina=')), '&tam_pagina=20'),
-                    'tam_pagina=50'
-                )
-            else:
-                url = url_base + "&tam_pagina=50"
+            # Substitui o trecho &tam_pagina=XX por &tam_pagina=50
+            url = url_base.replace(
+                next((part for part in url_base.split('&') if part.startswith('tam_pagina=')), '&tam_pagina=20'),
+                'tam_pagina=50'
+            )
+
         else:
             url = url_base
         driver.get(url)

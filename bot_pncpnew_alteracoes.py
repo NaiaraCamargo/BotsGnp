@@ -1,3 +1,0 @@
-from controle_botpncpnew import processar_url_alteracoes
-
-processar_url_alteracoes(plataforma="pncp")

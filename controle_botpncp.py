@@ -18,6 +18,14 @@ def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict,
 
     match = re.search(r'[?&]q=([^&]+)', url)
     palavra_chave = match.group(1) + '*' if match else ''
+    
+    if dados_url['id_pagina'] == 13215:
+        palavra_chave = 'projeto_arquitetonico*'
+    elif dados_url['id_pagina'] == 13217:
+        palavra_chave = 'construcao*'
+    elif dados_url['id_pagina'] == 13218:
+        palavra_chave = 'poco_artesiano*'
+            
     filtros_locais = {
         'banco': {
             'palavraschave': retornar_dicionario_filtros(palavra_chave),

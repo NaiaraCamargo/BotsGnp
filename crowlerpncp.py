@@ -31,9 +31,7 @@ from PyPDF2 import PdfReader, PdfWriter
 
 # Imports de módulos locais
 from funcoespncp import *
-from funcoesmapfre import *
 from gerar_planilha import *
-from mapfre_selenium import validar_criar_reserva, processar_pos_login, processar_login_mafre
 from repositoriopncp import *
 from drivers import *
 from threading import Lock
@@ -143,7 +141,7 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
                 
                 atualizar_ultima_data(id_pagina)
-                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
+                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 5)
 
                 #Limpar console a cada 10 minutos
                 if time.time() - ultima_limpeza >= 600:
@@ -212,26 +210,19 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
         )
             
         error_timeout = 0
-        driver_mapfre, profile_dir_mapfre = None, None
         try:
-            driver_mapfre, profile_dir_mapfre = setup_driver_mapfre()
             for texto in islice(novalistaElementos, quantidade_para_processar):
                 total_processados += 1
                 print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}")
                 
-                edital, error_timeout= processar_texto(texto, plataforma, driver, driver_mapfre, urlBase, id_pagina, ids_usuarios, hora_atual, 
+                edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
                     processar_dia,filtrosBase, lock_editais, editais_em_processamento, error_timeout)
                 
                 if edital:
                     lista_planilha.append(copy.deepcopy(edital))
         except Exception as e:
             logs.error(f"Erro no processamento de login da mapfre: {e}\n")
-        finally:
-            if driver_mapfre:
-                encerrar_driver_com_timeout(driver_mapfre) 
-            if profile_dir_mapfre:
-                shutil.rmtree(profile_dir_mapfre, ignore_errors=True)   
-                            
+      
         if len(lista_planilha) > 0:
             print(f"Processando Planilhas...\n")
             gerar_excel_registros(lista_planilha, plataforma, True) 
@@ -267,13 +258,6 @@ def calcular_quantidade_para_processar(total_itens, registros, quantidade_para_p
 
     return quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos
 
-def setup_driver_mapfre():
-    driver, profile_dir = criar_driver(mostrar_browser=False)
-    url_login = configuracoes.get("mafre", {}).get("url_login")
-    driver.get(url_login)
-    processar_login_mafre(driver)
-    return driver, profile_dir
-
 def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, 
                                  filtros, notificacao_config, filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp): 
     try:
@@ -281,7 +265,7 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
         logs.info(f"Total Processados {palavra_chave}: {total_processados}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
-            if palavra_chave not in ["obra", "pintura", "reforma"]:
+            if palavra_chave not in ["obra", "pintura", "reforma", "asbuilt", "projeto_arquitetonico", "construcao", "poco_atersiano"]:
                 if 10 < quantidade_para_processar <= 50:
                     tam_pagina = quantidade_para_processar + total_processados
                     pagina = 1
@@ -300,7 +284,7 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
             processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma,  
                             total_processados, quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
         
-        if palavra_chave in ["obra", "pintura", "reforma"]:
+        if palavra_chave in ["obra", "pintura", "reforma", "asbuilt", "projeto_arquitetonico", "construcao", "poco_atersiano"]:
             configuracoes[f"processar_todos_{palavra_chave}"] = False
             atualizar_arquivo_configuracoes()
             
@@ -311,30 +295,14 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
     except Exception as e:
         logs.error(f"Erro no processamento processar_paginas_adicionais: {e}\n")
         
-def processar_texto(texto, plataforma, driver, driver_mapfre, urlBase, id_pagina, ids_usuarios, hora_atual, 
+def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
                     processar_dia,filtrosBase, lock_editais, editais_em_processamento, error_timeout):
     
-    if plataforma == "obra" and not validar_modalidade_obras(texto):
+    if plataforma.startswith("obra") and not validar_modalidade_obras(texto):
         return None, error_timeout
     
-    if plataforma == "obra":
-        palavras_destacadas = validar_texto(texto, filtrosBase)
-        
-    if plataforma == "pncp":
-        json_str = classificar_licitacao(texto)
+    palavras_destacadas = validar_texto(texto, filtrosBase)     
 
-        # Converte string JSON em dicionário Python
-        data = json.loads(json_str)
-
-        # Agora você pode pegar cada valor em variáveis
-        relevante = data["relevante"]
-        ramo = data["ramo"]
-        ramo_id = data["ramo_id"]
-    
-    if not palavras_destacadas and plataforma != "obra":
-        return None, error_timeout
-
-    hora_antes_extrair_dados = datetime.now().strftime("%H:%M:%S")
     edital = extrair_dados(texto, urlBase)
     link = edital.get("Link", "").strip()
 
@@ -367,11 +335,7 @@ def processar_texto(texto, plataforma, driver, driver_mapfre, urlBase, id_pagina
             logs.info(f"Edital já existe no banco: {resultadoExisteEdital[0]['id']} - {resultadoExisteEdital[0]['link']}\n")
             return None, error_timeout
         
-        # Processamento por plataforma
-        if plataforma == "pncp":
-            edital, error_timeout = processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, hora_antes_extrair_dados)
-        elif plataforma == "obra":
-            edital, error_timeout = processar_obra(edital, driver, ids_usuarios, error_timeout)
+        edital, error_timeout = processar_obra(edital, driver, ids_usuarios, error_timeout)
 
         return edital, error_timeout
     except Exception as e:
@@ -403,135 +367,6 @@ def processar_obra(edital, driver, ids_usuarios, error_timeout):
     
     except Exception as e:
         logs.error(f"[ERRO no processar_obra:] {edital.get('Link', '').strip()} - {e}")
-
-def processar_pncp(edital, driver, driver_mapfre, ids_usuarios, error_timeout, hora_antes_extrair_dados):
-    try:
-        novos_dados = extrair_dados_nova_pagina_para_mapfre(driver, edital)
-        edital.update(novos_dados)
-        print(f"\nProcessando: {edital}\n") 
-            
-        retorno, msg, ramos_valores = validar_criar_reserva(edital)
-        if retorno:
-            edital["ramos_valores"] = ramos_valores
-        else:
-            edital["aviso_reserva"] = msg
-            novos_dados = extrair_dados_nova_pagina(driver, edital)
-            edital.update(novos_dados)
-            enviar_mensagem(edital, ids_usuarios, novo_processo=True)
-            gravar_novo_processo(edital, "pncp")
-            return edital, error_timeout
-
-        if novos_dados == "TimeoutException":
-            return tratar_timeout(edital, error_timeout, ids_usuarios)
-
-        pasta_killer, pasta_comprimidos = obter_pastas_download(edital, "pncp")
-        edital["pasta_download"] = pasta_killer
-        edital["pasta_comprimidos"] = pasta_comprimidos
-
-        thread_download = threading.Thread(target=baixar_em_thread, args=(driver, edital, "pncp"))
-        thread_download.start()
-        hora_antes_iniciar_reserva = datetime.now().strftime("%H:%M:%S")
-
-        resultado_queue = queue.Queue()
-        def chamar_inicializar_pagina():
-            with lock_pos_login:
-                msg, ids, imgs = processar_pos_login(driver_mapfre, edital, thread_download)
-                resultado_queue.put((msg, ids, imgs))
-
-        thread_mapfre = threading.Thread(target=chamar_inicializar_pagina)
-        thread_mapfre.start()
-        thread_mapfre.join()
-
-        # Tempo gasto
-        formato = "%H:%M:%S"
-        inicio = datetime.strptime(hora_antes_extrair_dados, formato)
-        fim = datetime.strptime(datetime.now().strftime("%H:%M:%S"), formato)
-        total_segundos = int((fim - inicio).total_seconds())
-        logs.warning(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
-        ##print(f"TEMPO EXTRAIR DADOS ATE APOS REGISTRO MAPFRE: {total_segundos}")
-        edital["horario_termino"] = str(timedelta(seconds=int((fim - inicio).total_seconds())))
-
-        if not resultado_queue.empty():
-            msg, ids, imgs = resultado_queue.get()
-            tratar_resultado_mafre(msg, ids, imgs, edital, hora_antes_iniciar_reserva)
-
-        novos_dados = extrair_dados_nova_pagina(driver, edital)
-        edital.update(novos_dados)
-        enviar_mensagem(edital, ids_usuarios, novo_processo=True)
-        gravar_novo_processo(edital, "pncp")
-        return edital, 0
-    
-    except Exception as e:
-        logs.error(f"[ERRO no processar_pncp:] {edital.get('Link', '').strip()} - {e}")
-
-def tratar_resultado_mafre(msg, ids, imgs, edital, hora_antes_iniciar_reserva):
-    try:
-        blocos = re.split(r";\s*", msg)
-        for parte in blocos:
-            parte_lower = parte.lower()
-            if "reserva já cadastrada" in parte_lower:
-                tratar_reserva_existente(parte, ids, imgs, edital)
-            elif "sucesso" in parte_lower:
-                tratar_reserva_sucesso(parte, ids, edital, hora_antes_iniciar_reserva)
-            elif "erro" in parte_lower:
-                edital["aviso_reserva"] = parte
-    except Exception as e:
-        logs.error(f"[ERRO no tratar_resultado_mafre:] {edital.get('Link', '').strip()} - {e}")
-        
-def tratar_reserva_existente(parte, ids, imgs, edital):
-    try:
-        for i, id_val in enumerate(ids, start=1):
-            match_id_url = re.search(r"id=(\d+)", id_val)
-            if not match_id_url:
-                continue
-            
-            id_extraido = match_id_url.group(1)
-            match_reserva = re.search(r"reserva:\s*(\d+)", parte)
-            id_reserva = match_reserva.group(1) if match_reserva else None
-            match_ramo = re.search(r"ramo:\s*(\d+)", parte)
-            ramo_id = match_ramo.group(1) if match_ramo else None
-
-            if id_reserva == id_extraido and ramo_id:
-                edital[f"reserva_perdida_{i}"] = id_val
-                edital[f"ramo_perdido_{i}"] = NOMES_RAMO.get(ramo_id, f"Ramo {ramo_id}")
-            if imgs and i - 1 < len(imgs):
-                edital[f"img_{i}"] = imgs[i - 1]
-                
-    except Exception as e:
-        logs.error(f"[ERRO no tratar_reserva_existente:] {edital.get('Link', '').strip()} - {e}")
-
-def tratar_reserva_sucesso(parte, ids, edital, hora_antes_iniciar_reserva):
-    try: 
-        formato = "%H:%M:%S"
-        for i, id_val in enumerate(ids, start=1):
-            match_id_url = re.search(r"id=(\d+)", id_val)
-            if not match_id_url:
-                continue
-
-            id_extraido = match_id_url.group(1)
-            match_reserva = re.search(r"reserva:\s*(\d+)", parte)
-            id_reserva = match_reserva.group(1) if match_reserva else None
-            match_ramo = re.search(r"ramo:\s*(\d+)", parte)
-            ramo_id = match_ramo.group(1) if match_ramo else None
-            
-            if id_reserva == id_extraido:
-                edital[f"link_reserva_{i}"] = id_val
-                if ramo_id:
-                    edital[f"ramo_{i}"] = NOMES_RAMO.get(ramo_id, f"Ramo {ramo_id}")
-                if "data inclusao" in parte.lower():
-                    match = re.search(r'data inclusao:\s*\d{2}/\d{2}/\d{4}\s+(\d{2}:\d{2}:\d{2})', parte.lower())
-                    if match:
-                        edital[f"horario_arq_anexado_{i}"] = match.group(1)
-                        hora_anexo = match.group(1)
-
-                        hora_inicio = datetime.strptime(hora_antes_iniciar_reserva, formato)
-                        hora_termino = datetime.strptime(hora_anexo, formato)
-                        total_segundos = int((hora_termino - hora_inicio).total_seconds())
-
-                        edital[f"diferença_inicio_anexo_{i}"] = str(timedelta(seconds=total_segundos))
-                    
-    except Exception as e:
-        logs.error(f"[ERRO no tratar_reserva_sucesso:] {edital.get('Link', '').strip()} - {e}")
   
 def tratar_timeout(edital, error_timeout, ids_usuarios):
     """Gerencia erros de timeout e decide se continua ou pausa processamento."""
@@ -545,12 +380,6 @@ def tratar_timeout(edital, error_timeout, ids_usuarios):
         return None, 0  # zera contagem após pausa
     return None, error_timeout
         
-                
-def baixar_em_thread(driver, edital, plataforma):
-    try:
-        acao_baixar_arquivo(driver, edital, plataforma)
-    except Exception as e:
-        logs.warning(f"Download paralelo falhou: {e}")
 
 def obter_pastas_download(edital, plataforma):
     try:
@@ -1102,9 +931,7 @@ def obter_caminho_edital(edital, plataforma):
     ano_atual = datetime.today().strftime("%Y")
     mes_atual = datetime.today().strftime("%B").capitalize()
     mes_atual = mes_atual.upper()
-    
-    # Limpar caracteres inválidos do número do edital e nome do órgão
-    numero_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Numero", "Desconhecido")).strip())
+
     orgao_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Orgao", "Desconhecido")).strip())
     estado = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Uf", "Desconhecido")).strip())
     
@@ -1116,14 +943,7 @@ def obter_caminho_edital(edital, plataforma):
     
     # Caminho das pastas
     pasta_dia = os.path.join(pasta_downloads, f"{ano_atual}/{mes_atual}/{dia}")
-    pasta_edital =""
-    
-    if plataforma == 'obra':
-        pasta_edital = os.path.join(pasta_dia, f"{data_obra} - {estado} - {orgao_edital}")      
-    else:
-        pasta_edital = os.path.join(pasta_dia, f"{numero_edital}-{orgao_edital}")
-       
-        
+    pasta_edital = os.path.join(pasta_dia, f"{data_obra} - {estado} - {orgao_edital}")      
     pasta_comprimidos = os.path.join(pasta_dia,"Arquivos Comprimidos")
     
     return pasta_edital, pasta_dia, pasta_comprimidos

@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['bot_pncpnew.py'],
+    ['bot_pncpobratwo.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='bot_pncpnew',
+    name='bot_pncpobratwo',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

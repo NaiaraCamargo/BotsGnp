@@ -14,7 +14,6 @@ usuariosNotificar = []
 configuracoes = {
     "token_telegram": "",
     "token_telegram_alterados": "",
-    "token_telegram_reserva_ignorada": "",
     "dias_limpar_logs": 30,
     "conexao_banco": {
         "host": "",
@@ -33,22 +32,14 @@ configuracoes = {
     "formatos_para_docx": [],
     "extensoes_validas": [],
     "limite_kb": 10000,
-    "processar_todos_obra": True,
-    "processar_todos_pintura": True,
-    "processar_todos_reforma": True,
+    "processar_todos_obra": False,
+    "processar_todos_pintura": False,
+    "processar_todos_reforma": False,
+    "processar_todos_projeto_arquitetonico": False,
+    "processar_todos_asbuilt": False,
+    "processar_todos_construcao": False,
+    "processar_todos_poco_artesiano": False,
     "processar_dia": True,
-    "mafre":{
-        "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
-        "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
-        "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=&p=consultaGeral.aspx",
-        "user": "",
-        "password": "",
-        "palavras_arquivos_exececoes": [
-            "anexo",
-            "termo",
-            "relacao"
-        ]
-    }
 }
 
 CAMINHO_CONFIG = "config.json"
@@ -133,116 +124,49 @@ def config(nome, texto=True):
     else:
         print(f"Configuração '{nome}' não encontrada.")
         return None
-
-
+        
 def enviar_mensagem(msg, usuarios_notificar, novo_processo, erro = False):
     try:
-        msg_formatada = formatar_mensagem_pncp(msg, erro)
+        msg = formatar_mensagem(msg, erro)
 
-        token_padrao = configuracoes.get('token_telegram', "")
-        token_alterados = configuracoes.get('token_telegram_alterados', "")
-        token_reserva_ignorada = configuracoes.get('token_telegram_reserva_ignorada', "")
+        token_enviar = configuracoes.get('token_telegram', "")
 
-        is_reserva_perdida = "reserva_perdida_1" in msg.keys()
-        is_aviso_reserva = "aviso_reserva" in msg.keys()
-        has_reserva_normal = "link_reserva_1" in msg.keys()
-        
-        tokens_enviar = []
+        if not novo_processo and configuracoes.get('token_telegram_alterados', "") !="":
+            token_enviar =  configuracoes.get('token_telegram_alterados', "")
+            logs.info(f"Enviar Mensagem: Token Telegram configurado para - {token_enviar}")
+       
+        if msg  != "" and token_enviar != "":
+            for usuario_notificar in usuarios_notificar:
+                tentativas = 3
+                for tentativa in range(tentativas):
+                    try:
+                        # Montando a URL para enviar a mensagem ao Telegram
+                        url = f"https://api.telegram.org/bot{token_enviar}/sendMessage"
 
-        if has_reserva_normal and not is_reserva_perdida and not is_aviso_reserva:
-            tokens_enviar.append(("padrao", token_padrao))
-        elif has_reserva_normal and is_reserva_perdida:
-            tokens_enviar.append(("padrao", token_padrao))
-            if token_alterados:
-                tokens_enviar.append(("perdida", token_alterados))
-        elif is_reserva_perdida and not is_aviso_reserva:
-            if token_alterados:
-                tokens_enviar.append(("perdida", token_alterados))
-        elif is_aviso_reserva and not has_reserva_normal and not is_reserva_perdida:
-            if token_reserva_ignorada:
-                tokens_enviar.append(("aviso", token_reserva_ignorada))
-        elif has_reserva_normal and is_aviso_reserva:
-           tokens_enviar.append(("padrao", token_padrao))
-        elif is_reserva_perdida and is_aviso_reserva:
-            if token_alterados:
-                tokens_enviar.append(("perdida", token_alterados))
+                        payload = {
+                            'chat_id': usuario_notificar,
+                            'parse_mode': 'HTML',
+                            'text': msg,
+                            'disable_web_page_preview': True
+                        }
 
-        tokens_enviar = list(dict.fromkeys(tokens_enviar))
- 
-        ids_padrao = ["-1002580376863", "-1002638350285"]
-        ids_reserva_perdida = ["-1002422647995", "-1002638350285"]
-        ids_aviso_reserva = ["-1002422647995", "-1002580376863"]
+                        response = requests.post(url, data=payload)
+                        
+                        if response.status_code == 200:
+                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {msg}")
+                        else:
+                            logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
 
-        for tipo, token in tokens_enviar:
-            usuarios_filtrados = usuarios_notificar.copy()
-            # Remover conforme o caso
-            if tipo == "padrao":
-                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_padrao]
-            elif tipo == "perdida":
-                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_reserva_perdida]
-            elif tipo == "aviso":
-                usuarios_filtrados = [u for u in usuarios_filtrados if u not in ids_aviso_reserva]
-            
-            if msg_formatada  != "" and token != "":
-                for usuario_notificar in usuarios_filtrados:
-                    tentativas = 3
-                    for tentativa in range(tentativas):
-                        try:
-                            # Montando a URL para enviar a mensagem ao Telegram
-                            url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-                            payload = {
-                                'chat_id': usuario_notificar,
-                                'parse_mode': 'HTML',
-                                'text': msg_formatada,
-                                'disable_web_page_preview': True
-                            }
-
-                            response = requests.post(url, data=payload)
-                            
-                            if response.status_code == 200:
-                                logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {msg}")
-                            else:
-                                logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
-
-                            sleep(1)
-                            break  # Envia a mensagem e sai do loop de tentativas
-                        except Exception as ee:
-                            if tentativa < tentativas - 1:
-                                logs.warning(f"Tentativa {tentativa + 1} falhou. Tentando novamente...")
-                                sleep(2)
-                            else:
-                                logs.error(f"Erro Enviar Mensagem: Não foi possível enviar para: {usuario_notificar}. Erro: {str(ee)}")
-                                
-                        # ⬇️ Novo bloco: envio das imagens (img_1, img_2, ...)
-                    if isinstance(msg, dict):
-                        for i in range(1, 3):  # Ajuste se precisar de mais imagens
-                            chave_img = f"img_{i}"
-                            if chave_img in msg:
-                                try:
-                                    img_path = msg[chave_img]
-                                    url_photo = f"https://api.telegram.org/bot{token}/sendPhoto"
-                                    with open(img_path, 'rb') as photo:
-                                        files = {'photo': photo}
-                                        data = {'chat_id': usuario_notificar}
-                                        resp_img = requests.post(url_photo, files=files, data=data)
-                                        if resp_img.status_code == 200:
-                                            logs.info(f"Imagem {chave_img} enviada para {usuario_notificar}")
-                                        else:
-                                            logs.error(f"Erro ao enviar imagem {chave_img}: {resp_img.text}")
-                                            
-                                    sleep(0.5)
-                                    
-                                    try:
-                                        os.remove(img_path)
-                                        logs.info(f"Imagem {img_path} removida com sucesso.")
-                                    except Exception as remove_err:
-                                        logs.error(f"Erro ao remover imagem {img_path}: {str(remove_err)}")
-                                except Exception as img_err:
-                                    logs.error(f"Erro ao enviar imagem {chave_img}: {str(img_err)}")
-                            
-            else:
-                logs.warning("Mensagem ou token de envio inválido.")
+                        sleep(1)
+                        break  # Envia a mensagem e sai do loop de tentativas
+                    except Exception as ee:
+                        if tentativa < tentativas - 1:
+                            logs.warning(f"Tentativa {tentativa + 1} falhou. Tentando novamente...")
+                            sleep(2)
+                        else:
+                            logs.error(f"Erro Enviar Mensagem: Não foi possível enviar para: {usuario_notificar}. Erro: {str(ee)}")      
+        else:
+            logs.warning("Mensagem ou token de envio inválido.")
     except Exception as e:
         logs.error(f"Erro ao enviar a mensagem: {str(e)}")
 
@@ -338,7 +262,7 @@ def limpar_console():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def formatar_mensagem_pncp(msg_dict, erro):
+def formatar_mensagem(msg_dict, erro):
     try:
         if type(msg_dict) != dict:
             return msg_dict

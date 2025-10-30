@@ -155,7 +155,7 @@ def criar_excel_registros(plataforma):
         workbook = xlsxwriter.Workbook(str(plataforma) + '_new_registros.xlsx')
         worksheet = workbook.add_worksheet()
        
-        if plataforma == 'obra':    
+        if plataforma.startswith("obra"):  
             #  Nome da coluna, Tamanho da célula  
             dados = (['Situação', 10],['Licitação', 10],['CNPJ', 15],['Órgão', 20],['Estado', 10],['UASG', 10],['Número', 10],
                       ['Número Aux', 10], ['Data de Abertura', 10], ['Hora', 10], ['Modalidade de Disputa', 20], ['N° Itens', 10], 
@@ -184,7 +184,7 @@ def criar_excel_registros(plataforma):
 def adicionar_registros(processos, arquivo, plataforma):
     try:
         df = pd.read_excel(arquivo)
-        if plataforma == 'obra':    
+        if plataforma.startswith("obra"):    
             for processo in processos:
                 registros = pd.DataFrame({
                     'Situação': [processo.get('Situacao')],
