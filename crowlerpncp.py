@@ -141,7 +141,12 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp)
                 
                 atualizar_ultima_data(id_pagina)
-                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 5)
+                if plataforma == 'obra2':
+                    idPlataforma = 5
+                else:
+                    idPlataforma = 4
+                    
+                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, idPlataforma)
 
                 #Limpar console a cada 10 minutos
                 if time.time() - ultima_limpeza >= 600:
@@ -544,10 +549,10 @@ def extrair_texto(texto, chave):
     except IndexError:
         return None
 
-def extrair_dados_nova_pagina_para_mapfre(driver, edital):
+def extrair_dados_nova_pagina(driver, edital):
     tentativas = 2 
-    for tentativa in range(tentativas):
-        try:
+    for tentativa in range(tentativas):               
+        try: 
             url_link = edital.get("Link", "")
             driver.get(url_link)
             elementos_nova_pagina = WebDriverWait(driver, 40).until(
@@ -564,14 +569,20 @@ def extrair_dados_nova_pagina_para_mapfre(driver, edital):
                 partes = data_fim_recebimento_str.split(" ")
                 if len(partes) == 2:
                     data_fim, hora_fim = partes
-                    
+              
             novos_campos = {
+                'DataInicioRecebimentoProposta': extrair_data_com_horario(texto, 'Data de início de recebimento de propostas: ') or None,
+                'CodigoUnidadeCompradora': extrair_codigo_unidade_compradora(texto),
+                'ModoDeDisputa': extrair_texto(texto, 'Modo de disputa: '),
+                'Situacao':extrair_texto(texto, 'Situação: '),
                 'DataFimRecebimentoProposta': data_fim_recebimento_str,
                 "DataFim": data_fim,
                 "HoraFim": hora_fim,
-            }       
+            }
+   
+            button = "Acessar Contratação" in texto
             
-            # Caso o numero de itens no texto inicial não é econtrado tenta em outro parte do html
+             # Caso o numero de itens no texto inicial não é econtrado tenta em outro parte do html
             if numero_itens == '0':
                 elemento_itens = elementos_nova_pagina[0].find_element(By.CLASS_NAME, 'pagination-information')
                 texto = elemento_itens.text
@@ -600,39 +611,6 @@ def extrair_dados_nova_pagina_para_mapfre(driver, edital):
                     else:
                         novos_campos['ValorTotalEstimadoCompra'] = 'SEM ESTIMADO'
             
-            
-            return novos_campos 
-        except Exception as e:
-            if tentativa < tentativas - 1:
-                    print(f"Erro na tentativa extrair_dados_nova_pagina_para_mapfre {tentativa + 1}: Tentando novamente...\n")
-                    time.sleep(0.5)  
-            else:
-                print(f"Erro final em extrair_dados_nova_pagina_para_mapfre: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
-                logs.error(f"Erro final em extrair_dados_nova_pagina_para_mapfre: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
-                string_error = type(e).__name__
-                return string_error
-    
-    return []
-
-def extrair_dados_nova_pagina(driver, edital):
-    tentativas = 2 
-    for tentativa in range(tentativas):               
-        try: 
-            url_link = edital.get("Link", "")
-            driver.get(url_link)
-            elementos_nova_pagina = WebDriverWait(driver, 40).until(
-                EC.presence_of_all_elements_located((By.XPATH, '//div[@id="main-content"]/pncp-item-detail/div'))
-            )
-            texto = elementos_nova_pagina[0].text
-              
-            novos_campos = {
-                'DataInicioRecebimentoProposta': extrair_data_com_horario(texto, 'Data de início de recebimento de propostas: ') or None,
-                'CodigoUnidadeCompradora': extrair_codigo_unidade_compradora(texto),
-                'ModoDeDisputa': extrair_texto(texto, 'Modo de disputa: '),
-                'Situacao':extrair_texto(texto, 'Situação: '),
-            }
-   
-            button = "Acessar Contratação" in texto
         
             # tenta abrir o link do botão em nova aba e capturar a URL
             link = None

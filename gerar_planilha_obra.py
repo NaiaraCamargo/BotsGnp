@@ -176,7 +176,7 @@ def criar_excel_registros(plataforma):
         print('Erro: ' + str(e))
 
 
-def adicionar_registros(processos, arquivo, plataforma):
+def adicionar_registros(processos, arquivo):
     try:
         df = pd.read_excel(arquivo)
        

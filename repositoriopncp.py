@@ -426,7 +426,7 @@ def gravar_novo_processo(editalnovo, plataforma):
                             "id", "id_processo", "id_contratacao_pncp", "cnpj",
                             "valor_total_estimado_compra", "quantidade_total_itens",
                             "data_inicio_recebimento_proposta", "data_fim_recebimento_proposta",
-                            "codigo_unidade_compradora", "link_auxiliar"
+                            "codigo_unidade_compradora", "link_auxiliar", "created_at"
                         ]
                         valores = [
                             id_pncp, novo_id,
@@ -437,22 +437,10 @@ def gravar_novo_processo(editalnovo, plataforma):
                             validar_campo_banco('DataInicioRecebimentoProposta', editalnovo, 60),
                             validar_campo_banco('DataFimRecebimentoProposta', editalnovo, 60),
                             validar_campo_banco('CodigoUnidadeCompradora', editalnovo, 50),
-                            link_aux
+                            link_aux, data_criacao
+                            
                         ]
 
-                        # Adiciona dinamicamente os campos link_reserva_{i}, horario_arq_anexado_{i}, diferenca_inicio_e_anexo_{i}
-                        for i in range(1, 5):
-                            link_key = f"link_reserva_{i}"
-                            horario_key = f"horario_arq_anexado_{i}"
-                            diferenca_key = f"diferenca_inicio_e_anexo_{i}"
-
-                            if editalnovo.get(link_key) or editalnovo.get(horario_key) or editalnovo.get(diferenca_key):
-                                colunas.extend([link_key, horario_key, diferenca_key])
-                                valores.extend([
-                                    str(editalnovo.get(link_key, '')),
-                                    str(editalnovo.get(horario_key, '')),
-                                    str(editalnovo.get(diferenca_key, ''))
-                                ])
                         # Monta dinamicamente a SQL
                         campos_sql = ", ".join(colunas)
                         placeholders_sql = ", ".join(["%s"] * len(valores))
