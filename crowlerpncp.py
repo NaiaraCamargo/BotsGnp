@@ -31,18 +31,18 @@ from PyPDF2 import PdfReader, PdfWriter
 
 # Imports de módulos locais
 from funcoespncp import *
-from gerar_planilha import *
 from repositoriopncp import *
 from drivers import *
 from threading import Lock
 import ollama
+import os
+import pandas as pd
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
 lock_editais = Lock()
 
 retornoMsg = ""
-
 class ControleMetadados:
     def __init__(self):
         if not isfile("metadados.db"):
@@ -77,7 +77,6 @@ class ControleMetadados:
 
 metadados = ControleMetadados()
 
-
 def carregar_filtros(nome, valores='', filtros_base=None):
     if filtros_base is None:
         filtros_base = {}
@@ -103,7 +102,6 @@ def carregar_filtros(nome, valores='', filtros_base=None):
 
     return filtros_base
 
-  
 def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
     id_pagina = notificacao_config['id_pagina']
     ids_usuarios = notificacao_config['ids_usuarios']
@@ -171,11 +169,10 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
     except Exception as e_crawler:
         logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
 
-     
 def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, 
                      quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp):
     try:
-        lista_planilha = []
+        #lista_planilha = []
         controles_iniciais(driver)
 
         pagination_info = driver.find_elements(By.CLASS_NAME, "pagination-information")
@@ -223,15 +220,15 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
                 edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
                     processar_dia,filtrosBase, lock_editais, editais_em_processamento, error_timeout)
                 
-                if edital:
-                    lista_planilha.append(copy.deepcopy(edital))
+                #if edital:
+                    #lista_planilha.append(copy.deepcopy(edital))
         except Exception as e:
             logs.error(f"Erro no processamento de login da mapfre: {e}\n")
       
-        if len(lista_planilha) > 0:
-            print(f"Processando Planilhas...\n")
-            gerar_excel_registros(lista_planilha, plataforma, True) 
-            time.sleep(1)
+        #if len(lista_planilha) > 0:
+            #print(f"Processando Planilhas...\n")
+            #gerar_excel_registros(lista_planilha, plataforma, True) 
+            #time.sleep(1)
                 
         if processar_todos or processa_mais_paginas:
             processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, 
@@ -241,7 +238,6 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
         
     except Exception as e:
         logs.error(f"Erro no processamento da página: {e}\n")
-
 
 def calcular_quantidade_para_processar(total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave):
     processa_mais_paginas = False
@@ -306,7 +302,7 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
     if plataforma.startswith("obra") and not validar_modalidade_obras(texto):
         return None, error_timeout
     
-    palavras_destacadas = validar_texto(texto, filtrosBase)     
+    palavras_destacadas = validar_palavras(texto=texto, filtrosBase=filtrosBase)
 
     edital = extrair_dados(texto, urlBase)
     link = edital.get("Link", "").strip()
@@ -340,7 +336,7 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
             logs.info(f"Edital já existe no banco: {resultadoExisteEdital[0]['id']} - {resultadoExisteEdital[0]['link']}\n")
             return None, error_timeout
         
-        edital, error_timeout = processar_obra(edital, driver, ids_usuarios, error_timeout)
+        edital, error_timeout = processar_obra(edital, driver, ids_usuarios, error_timeout, palavras_destacadas, filtrosBase)
 
         return edital, error_timeout
     except Exception as e:
@@ -351,23 +347,34 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
 
     return None, error_timeout
 
-def processar_obra(edital, driver, ids_usuarios, error_timeout):
+def processar_obra(edital, driver, ids_usuarios, error_timeout, palavras_destacadas, filtrosBase):
     try:
+        palavra_chave_item = False
         novos_dados = extrair_dados_nova_pagina(driver, edital)
+        itens_dados= extrair_dados_itens(driver, edital)
+        
+        palavra_chave_item = validar_palavras(itens=itens_dados, filtrosBase=filtrosBase)
+        
         if novos_dados == "TimeoutException":
             return tratar_timeout(edital, error_timeout, ids_usuarios)
+        
+        if not palavras_destacadas and not palavra_chave_item:
+            return None, error_timeout
 
         edital.update(novos_dados)
+        edital["itens_dados"] = itens_dados
+        
         pasta_killer, pasta_comprimidos = obter_pastas_download(edital, "obra")
         edital["pasta_download"] = pasta_killer
         edital["pasta_comprimidos"] = pasta_comprimidos
+        
         print(f"\nProcessando: {edital}\n") 
             
-        if edital["Uf"].upper() == "RS":
+        if edital["Uf"].upper() == "RS" and (palavras_destacadas or palavra_chave_item):
             enviar_mensagem(edital, ids_usuarios, novo_processo=True)
             
         acao_baixar_arquivo(driver, edital, "obra")
-        gravar_novo_processo(edital, "obra")
+        gravar_novo_processo(edital)
         return edital, 0
     
     except Exception as e:
@@ -385,7 +392,6 @@ def tratar_timeout(edital, error_timeout, ids_usuarios):
         return None, 0  # zera contagem após pausa
     return None, error_timeout
         
-
 def obter_pastas_download(edital, plataforma):
     try:
         pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital, plataforma)
@@ -409,30 +415,45 @@ def validar_modalidade_obras (texto):
     else:
         return True
 
-def validar_texto(texto, filtrosBase):
-    pos_objeto = texto.lower().find("objeto:")
-    if pos_objeto == -1:
-        return [] 
-
-    texto_objeto = texto[pos_objeto + len("Objeto:"):].strip()
-    texto_normalizado = unidecode(texto_objeto.lower())
-
+def validar_palavras(texto=None, itens=None, filtrosBase=None):
     palavras_encontradas = []
+    palavras_chave_dict = filtrosBase['banco']['palavraschave']
 
-    for palavra_chave, palavras_bloqueadas in filtrosBase['banco']['palavraschave'].items():
-        if palavra_chave not in texto_normalizado:
-            continue
+    # --- Caso seja texto único ---
+    if texto is not None:
+        pos_objeto = texto.lower().find("objeto:")
+        if pos_objeto == -1:
+            return []
 
-        # Bloqueia se encontrar uma palavra proibida
-        if any(re.search(rf'\b{re.escape(pb)}\b', texto_normalizado) for pb in palavras_bloqueadas):
-            continue
+        texto_original = texto[pos_objeto + len("Objeto:"):].strip()
+        text_list = [texto_original]
 
-        # Busca todas as palavras do texto original que começam com a palavra-chave
-        palavras = texto_objeto.split()
-        palavras_encontradas.extend([w.strip(string.punctuation) for w in palavras if unidecode(w.lower()).startswith(palavra_chave)])
+    # --- Caso seja lista de itens ---
+    elif itens is not None:
+        text_list = [item.get("descricaoItem", "") for item in itens]
+
+    else:
+        return []  # nenhum parâmetro válido
+
+    for txt in text_list:
+        texto_normalizado = unidecode(txt.lower())
+
+        for palavra_chave, palavras_bloqueadas in palavras_chave_dict.items():
+            if palavra_chave not in texto_normalizado:
+                continue
+
+            if any(re.search(rf'\b{re.escape(pb)}\b', texto_normalizado) for pb in palavras_bloqueadas):
+                continue
+            
+            palavras = txt.split()
+            palavras_encontradas.extend([
+                w.strip(string.punctuation)
+                for w in palavras
+                if unidecode(w.lower()).startswith(palavra_chave)
+            ])
 
     return palavras_encontradas
-
+    
 def classificar_licitacao(descricao: str):
     prompt = f"""
     Você é um classificador de editais de licitação para corretoras de seguros.
@@ -454,7 +475,6 @@ def classificar_licitacao(descricao: str):
 
     return resposta["message"]["content"]
 
-
 def destacar_palavras(texto, palavras):
 
     #Destaca todas as ocorrências exatas das palavras no texto com <b></b>, sem sobreposição e respeitando posições.
@@ -473,7 +493,6 @@ def destacar_palavras(texto, palavras):
         texto = re.sub(rf'\b{re.escape(palavra)}\b', substituir, texto, flags=re.IGNORECASE)
 
     return texto
-
 
 def extrair_dados(texto, urlBase):
     id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
@@ -610,7 +629,6 @@ def extrair_dados_nova_pagina(driver, edital):
                         novos_campos['ValorTotalEstimadoCompra'] = valor_total_estimado
                     else:
                         novos_campos['ValorTotalEstimadoCompra'] = 'SEM ESTIMADO'
-            
         
             # tenta abrir o link do botão em nova aba e capturar a URL
             link = None
@@ -652,8 +670,59 @@ def extrair_dados_nova_pagina(driver, edital):
                 string_error = type(e).__name__
                 return string_error
     return []
+
+def extrair_dados_itens(driver, edital):
+    tentativas = 2 
+    for tentativa in range(tentativas):               
+        try: 
+          
+            WebDriverWait(driver, 40).until(
+                EC.presence_of_all_elements_located((By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[1]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller'))
+            )
+            time.sleep(0.2)
+            # Espera até que pelo menos um row apareça
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper"))
+            )
+            elementos_itens =  driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[1]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
+            rows = elementos_itens.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
+            campos_itens =  []
+            for row in rows:
+                campos_itens.append({
+                    "numeroItem":    safe_text(row, "datatable-body-cell:nth-child(1) span"),
+                    "descricaoItem": safe_text(row, "datatable-body-cell:nth-child(2) span"),
+                    "quantidadeItem": safe_text(row, "datatable-body-cell:nth-child(3) span"),
+                    "valorUnitItem": safe_text(row, "datatable-body-cell:nth-child(4) span"),
+                    "valorTotalItem": safe_text(row, "datatable-body-cell:nth-child(5) span")
+                })
+                
+            return campos_itens 
         
-                        
+        except Exception as e:
+            if tentativa < tentativas - 1:
+                print(f"Erro na tentativa extrair_dados_itens {tentativa + 1}: Tentando novamente...\n")
+                time.sleep(0.5)  
+            else:
+                print(f"Erro final em extrair_dados_itens: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
+                logs.error(f"Erro final em extrair_dados_itens: {type(e).__name__}: edital link:",  edital["Link"] ,"\n")
+                string_error = type(e).__name__
+                return string_error
+    return []
+
+def safe_text(row, css):
+    try:
+        txt = row.find_element(By.CSS_SELECTOR, css).get_attribute("innerText")
+        if not txt:
+            return ""
+        
+        txt = txt.replace("\xa0", " ")
+        txt = txt.replace("R$ ", "").replace("R$", "")
+        txt = txt.strip()
+        return txt
+
+    except:
+        return ""
+                             
 def extrair_data_com_horario(texto, chave):
     """Extrai a data e horário, removendo apenas '(horário de Brasília)'."""
     valor = extrair_texto(texto, chave)
@@ -735,8 +804,7 @@ def acao_baixar_arquivo(driver, edital, plataforma):
         if tentativa >= 1:
             return arquivos_baixados
     return False
-           
-             
+                       
 def salvar_arquivos(arquivos, edital, plataforma):
     arquivos_baixados = 0
     compactado = False
@@ -949,7 +1017,6 @@ def comprimir_pdf(caminho_pdf):
         logs.error(f"Erro ao comprimir {caminho_pdf}: {str(e)}")
         return caminho_pdf
 
-
 def mover_campactados(caminho_compactado, pasta_edital,nome_arquivo):
     # Mover o ZIP ou RAR original para a pasta 'compactados'   
     pasta_compactados = os.path.join(pasta_edital, 'compactados')
@@ -1039,7 +1106,6 @@ def executar_verificacao_arquivos(caminho_completo, ext, pasta_edital, nome_arqu
     except Exception as e:
         logs.error("Erro ao executar_verificacao_arquivos - ", str(e))
 
-
 def converter_para_xlsx(arquivo_origem):
     nome_arquivo_sem_extensao, ext = os.path.splitext(arquivo_origem)
     novo_arquivo_xlsx = f"{nome_arquivo_sem_extensao}.xlsx"
@@ -1080,7 +1146,6 @@ def converter_para_pdf(imagem, pasta_edital):
         except Exception as e:
             print(f"Erro ao converter {imagem} para PDF: {e}")
             logs.error(f"Erro ao converter {imagem} para PDF: {e}")
-
 
 def verificacao_comprimir_arquivo(caminho_completo):
     limite_kb = configuracoes.get("limite_kb")
@@ -1146,7 +1211,6 @@ def converter_para_docx(arquivo_origem):
 
 
 ## PROCESSOS PARA LICITAÇÕES QUE JA EXISTEM EM BANCO DE DADOS   
-
 def executar_processos_alteracao(processo, notificacao_config):
     try:   
         ids_usuarios = notificacao_config['ids_usuarios']

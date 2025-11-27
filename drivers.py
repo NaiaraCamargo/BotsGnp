@@ -13,10 +13,8 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import psutil
 
-
 # Imports de módulos locais
 from funcoespncp import *
-from gerar_planilha import *
 from repositoriopncp import *
 
 def controles_iniciais(driver):

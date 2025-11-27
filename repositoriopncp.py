@@ -174,34 +174,51 @@ def retornar_processos(filtros):
     query_parts = []
     parametros = []
 
-    plataforma = filtros.get("plataforma", "").lower()
+    link = filtros.get("link_edital", "")
     data_inicial = filtros.get("data_inicial", "").strip()
     data_final = filtros.get("data_final", "").strip()
 
     if data_inicial:
         query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(data), 1, 10), '%d/%m/%Y') >= %s")
         parametros.append(data_inicial)
-
     if data_final:
         query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(data), 1, 10), '%d/%m/%Y') <= %s")
         parametros.append(data_final)
-
-    if plataforma == "pncp":
-        query_parts.append("processos.id_page IN (10000, 13213, 13214, 13215)")
-    elif plataforma.startswith("obra"):
-        query_parts.append("processos.id_page IN (10000, 13213, 13214, 13215, 13216, 13217, 13218)")
+    if link:
+        query_parts.append("p.link = %s")
+        parametros.append(link)
+          
+    query_parts.append("p.id_page IN (10000, 13213, 13214, 13215, 13216, 13217, 13218)")
 
     where_extra = ""
     if query_parts:
         where_extra = " AND " + " AND ".join(query_parts)
 
-    query_final = (
-        "SELECT * FROM processos "
-        "LEFT JOIN processos_pncp ON processos.id = processos_pncp.id_processo "
-        "WHERE 1=1" + where_extra +
-        " ORDER BY STR_TO_DATE(SUBSTRING(TRIM(data), 1, 10), '%d/%m/%Y') DESC"
-    )
+    query_final = f"""
+        SELECT
+            p.*,
+            pn.*,
+            (
+                SELECT JSON_ARRAYAGG(
+                    JSON_OBJECT(
+                        'numero_item', i.numero_item,
+                        'descricao_item', i.descricao_item,
+                        'quantidade_item', i.quantidade_item,
+                        'valor_unit_item', i.valor_unit_item,
+                        'valor_total_item', i.valor_total_item
+                    )
+                )
+                FROM processos_itens i
+                WHERE i.id_processo = p.id
+            ) AS itens
+        FROM processos p
+        LEFT JOIN processos_pncp pn ON pn.id_processo = p.id
+        WHERE 1=1
+        {where_extra}
+        ORDER BY STR_TO_DATE(SUBSTRING(TRIM(p.data), 1, 10), '%d/%m/%Y') DESC
+    """
 
+    
     with mysql.connector.connect(
         host=config('host'),
         port=int(config('port')),
@@ -211,7 +228,15 @@ def retornar_processos(filtros):
     ) as conexao:
         with conexao.cursor(dictionary=True) as cursor:
             cursor.execute(query_final, parametros)
-            processos = cursor.fetchall()
+            registros = cursor.fetchall()
+
+            # Converter JSON dos itens
+            for r in registros:
+                if r.get("itens"):
+                    r["itens"] = json.loads(r["itens"])
+                else:
+                    r["itens"] = []
+                processos.append(r)
 
     return processos
 
@@ -368,99 +393,143 @@ def verificar_existencia_edital_new(link, orgao, numero):
                
     except Exception as e:
         logs.info(f"""Erro verificar_existencia_edital_new nao foi possivel conectar ao banco - {str(e)}""")
-        
-
-    
-    
-def gravar_novo_processo(editalnovo, plataforma):
-    print(f"Gravar novo processo (por link): {editalnovo.get('Link', 'Link não encontrado')}")
-   
+               
+def gravar_processo(cursor, edital):
     try:
-        # Conecta ao banco de dados e cria um cursor
-        with lock_insercao: 
+        novo_id = None  # Variável para armazenar o id do novo processo
+        novo_id = str(uuid4())
+
+        sql = """
+            INSERT INTO processos (
+                id, id_page, link, descricao, numero, data,
+                municipio, uf, licitacao, situacao, orgao,
+                termos, created_at, updated_at, envio_notificacao, numero_aux
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s
+            )
+        """
+
+        valores = (
+            novo_id, edital['id_pagina'], validar_campo_banco('Link', edital, 400),
+            validar_campo_banco('Descricao', edital, 600), validar_campo_banco('Numero', edital, 60),
+            validar_campo_banco('Data', edital, 60), validar_campo_banco('Municipio', edital, 200),
+            validar_campo_banco('Uf', edital, 2), validar_campo_banco('Licitacao', edital, 100),
+            validar_campo_banco('Situacao', edital, 100), validar_campo_banco('Orgao', edital, 200),
+            validar_campo_banco('palavras_chave', edital, 150),
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            edital.get("envio_notificacao"),
+            edital.get("NumeroAux")
+        )
+
+        cursor.execute(sql, valores)
+        return novo_id
+    except Exception as e:
+        logs.error(f"Erro ao inserir processo - {str(edital)} - {str(e)}")
+        raise  
+    
+def gravar_processo_pncp(cursor, edital, id_processo):
+    try:
+        id_pncp = str(uuid4())
+        edital['Cnpj'] = limpar_cnpj(edital['Cnpj'])
+
+        sql = """
+            INSERT INTO processos_pncp (
+                id, id_processo, id_contratacao_pncp, cnpj,
+                valor_total_estimado_compra, quantidade_total_itens,
+                data_inicio_recebimento_proposta, data_fim_recebimento_proposta,
+                codigo_unidade_compradora, link_auxiliar, created_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+        """
+
+        valores = (
+            id_pncp, id_processo,
+            validar_campo_banco('IdContratacaoPncp', edital, 256),
+            validar_campo_banco('Cnpj', edital, 14),
+            validar_campo_banco('ValorTotalEstimadoCompra', edital, 100),
+            validar_campo_banco('QuantidadeItens', edital, 100),
+            validar_campo_banco('DataInicioRecebimentoProposta', edital, 60),
+            validar_campo_banco('DataFimRecebimentoProposta', edital, 60),
+            validar_campo_banco('CodigoUnidadeCompradora', edital, 50),
+            edital.get("LinkBotao"),
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+
+        cursor.execute(sql, valores)
+    
+    except Exception as e:
+        logs.error(f"Erro ao inserir processo pncp- {str(edital)} -  id_processo={id_processo} - {str(e)}")
+        raise  
+
+def gravar_processo_itens(cursor, itens, id_processo):
+    try:
+        sql_item = """
+            INSERT INTO processos_itens (
+                id, id_processo, numero_item, descricao_item,
+                quantidade_item, valor_unit_item, valor_total_item
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s
+            )
+        """
+
+        for item in itens:
+            valores_item = (
+                str(uuid4()),
+                id_processo,
+                item.get("numeroItem"),
+                item.get("descricaoItem"),
+                item.get("quantidadeItem"),
+                item.get("valorUnitItem"),
+                item.get("valorTotalItem"),
+            )
+            cursor.execute(sql_item, valores_item)
+    except Exception as e:    
+        logs.error(f"Erro ao inserir item específico - item={str(item)} - id_processo={id_processo} - erro={str(e)}")
+        raise
+        
+def gravar_novo_processo(editalnovo):
+    print(f"Gravar novo processo (por link): {editalnovo.get('Link', 'Link não encontrado')}")
+    
+    try:
+        with lock_insercao:
             with mysql.connector.connect(
-                    host=config('host'), port=int(config('port')), user=config('user'),
-                    password=config("password"), database=config("database")) as conexao:
+                host=config('host'), port=int(config('port')), 
+                user=config('user'), password=config("password"), 
+                database=config("database")
+            ) as conexao:
 
                 with conexao.cursor(dictionary=True) as cursor:
-                    novo_id = None  # Variável para armazenar o id do novo processo
-
-                    # Verifica duplicidade pelo link e insere no banco
+                    id_processo = None  # Variável para armazenar o id do novo processo
+                    
+                    # verifica duplicidade
                     cursor.execute("SELECT id FROM processos WHERE link = %s", (editalnovo['Link'].rstrip('/'),))
                     if cursor.fetchone():
                         print(f"Edital já existe no banco (por link), ignorando: {editalnovo['Link']}")
                         logs.info(f"Edital já existe no banco (por link), ignorando: {editalnovo['Link']}\n")
-                    else:
-                        # Gera ID único para o novo processo
-                        novo_id = str(uuid4())
-                        data_criacao = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        envio_notificacao = editalnovo.get('envio_notificacao', None) 
-                        num_aux =  editalnovo.get('NumeroAux') or None
+                        return True
 
-                        sql = """INSERT INTO processos (
-                                    id, id_page, link, descricao, numero, data,
-                                    municipio, uf, licitacao, situacao, orgao,
-                                    termos, created_at, updated_at, envio_notificacao, numero_aux
-                                ) VALUES (
-                                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s
-                                )"""
+                    id_processo = gravar_processo(cursor, editalnovo)
+                    gravar_processo_pncp(cursor, editalnovo, id_processo)
+                    
+                    if "itens_dados" in editalnovo:
+                        gravar_processo_itens(cursor, editalnovo["itens_dados"], id_processo)
 
-                        valores = (
-                            novo_id, editalnovo['id_pagina'], validar_campo_banco('Link', editalnovo, 400),
-                            validar_campo_banco('Descricao', editalnovo, 600), validar_campo_banco('Numero', editalnovo, 60),
-                            validar_campo_banco('Data', editalnovo, 60), validar_campo_banco('Municipio', editalnovo, 200),
-                            validar_campo_banco('Uf', editalnovo, 2), validar_campo_banco('Licitacao', editalnovo, 100),
-                            validar_campo_banco('Situacao', editalnovo, 100), validar_campo_banco('Orgao', editalnovo, 200),
-                            validar_campo_banco('palavras_chave', editalnovo, 150), data_criacao, envio_notificacao, num_aux
-                        )
-
-                        cursor.execute(sql, valores)
-
-                       
-                        id_pncp = str(uuid4())
-                        editalnovo['Cnpj'] = limpar_cnpj(editalnovo['Cnpj'])  # Garante CNPJ limpo
-                        link_aux = editalnovo.get('LinkBotao') or None
-
-                        # Campos base obrigatórios
-                        colunas = [
-                            "id", "id_processo", "id_contratacao_pncp", "cnpj",
-                            "valor_total_estimado_compra", "quantidade_total_itens",
-                            "data_inicio_recebimento_proposta", "data_fim_recebimento_proposta",
-                            "codigo_unidade_compradora", "link_auxiliar", "created_at"
-                        ]
-                        valores = [
-                            id_pncp, novo_id,
-                            validar_campo_banco('IdContratacaoPncp', editalnovo, 256),
-                            validar_campo_banco('Cnpj', editalnovo, 14),
-                            validar_campo_banco('ValorTotalEstimadoCompra', editalnovo, 100),
-                            validar_campo_banco('QuantidadeItens', editalnovo, 100),
-                            validar_campo_banco('DataInicioRecebimentoProposta', editalnovo, 60),
-                            validar_campo_banco('DataFimRecebimentoProposta', editalnovo, 60),
-                            validar_campo_banco('CodigoUnidadeCompradora', editalnovo, 50),
-                            link_aux, data_criacao
-                            
-                        ]
-
-                        # Monta dinamicamente a SQL
-                        campos_sql = ", ".join(colunas)
-                        placeholders_sql = ", ".join(["%s"] * len(valores))
-                        sql_pncp = f"INSERT INTO processos_pncp ({campos_sql}) VALUES ({placeholders_sql})"
-
-                        # Executa
-                        cursor.execute(sql_pncp, valores)
-
-                        conexao.commit()
-                        print(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {novo_id}\n")
-                        logs.info(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {novo_id}")
+                    conexao.commit()
+                    
+                    print(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {id_processo}\n")
+                    logs.info(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {id_processo}")
                     
                     # Verifica a necessidade de notificação
                     if editalnovo.get("notificar_retorno") is True:
-                        if novo_id:  # Verifica se o novo id foi obtido
-                            atualizar_envio_notificacao(novo_id, cursor, editalnovo)  # Passa o id para atualizar
+                        if id_processo:  # Verifica se o novo id foi obtido
+                            atualizar_envio_notificacao(id_processo, cursor, editalnovo)  # Passa o id para atualizar
 
-            return True  
+            return True
+
     except Exception as e:
         logs.error(f"Erro ao gravar novo processo - {str(editalnovo)} - {str(e)}")
+        conexao.rollback()
         return False
               
 def retornar_registro_paginas(idPagina, idPlataforma):
@@ -480,7 +549,6 @@ def retornar_registro_paginas(idPagina, idPlataforma):
   except Exception as e:
         logs.info(f"""Erro retornar_registro_paginas nao foi possivel conectar ao banco - {str(e)}""")
 
-
 def retornar_edital_existente_by_plataforma(editalExistente, plataforma):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
@@ -499,7 +567,6 @@ def retornar_edital_existente_by_plataforma(editalExistente, plataforma):
     except Exception as e:
         logs.info(f"""Erro retornar_edital_existente_by_plataforma nao foi possivel conectar ao banco - {str(e)}""")
             
-
 def gravar_alteracao_processo(alteracoes, dados_existentes, gravar_registro=False):
     try:
         with mysql.connector.connect(
@@ -566,9 +633,7 @@ def gravar_alteracao_processo(alteracoes, dados_existentes, gravar_registro=Fals
 
     except Exception as e:
         logs.error(f"Erro ao gravar alterações no processo: {e}")
-        
-        
-        
+                   
 def retorna_processos_banco(ids, data_inicial):
     try:
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'), password=config("password"), database=config("database")) as conexao:

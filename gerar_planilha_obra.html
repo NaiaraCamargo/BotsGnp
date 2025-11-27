@@ -3,143 +3,206 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Gerar Planilha</title>
 
     <style>
 
-        body{
-            background-color: rgb(166, 199, 183);
+       body {
+            background-color: #e8f3ec;
+            background-image:
+                linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px);
+            background-size: 42px 42px;
+            background-attachment: fixed;
+            margin: 0;
+            font-family: Arial, sans-serif;
         }
 
-        #content, .linha{
-            position: relative;
-            margin: auto;
-            left: 0;
-            right: 0;
-            width: max-content;
+        #content {
+            background: rgba(255,255,255,0.88);
+            padding: 30px 40px;
+            border-radius: 14px;
+            width: 500px;
+            margin: 60px auto;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+            animation: fade 0.3s ease;
         }
 
-        #selecionar_data{
-            display: flex;
-            flex-flow: row wrap;
+        @keyframes fade {
+            from {opacity: 0; transform: translateY(10px);}
+            to {opacity: 1; transform: translateY(0);}
+        }
+
+        h1 {
             text-align: center;
-            justify-content: space-between;
+            margin-top: 0;
+            color: #244c3b;
+            font-size: 24px;
+            margin-bottom: 25px;
         }
 
-        .bloqueado{
+        .linha {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .linha label {
+            margin-right: 15px;
+            font-size: 14px;
+            color: #2a4d3d;
+            cursor: pointer;
+        }
+
+        input[type="date"], input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #92b9aa;
+            background: #ffffff;
+            margin-top: 6px;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        input:focus, select:focus {
+            border-color: #5ca98b;
+            box-shadow: 0 0 6px rgba(92,169,139,0.5);
+            outline: none;
+        }
+
+        #selecionar_data {
+            display: flex;
+            gap: 6px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #selecionar_data label {
+            white-space: nowrap;
+        }
+
+        #botao_gerar {
+            width: 100%;
+            background-color: #5ac18e;
+            border: none;
+            padding: 12px;
+            color: white;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 25px;
+            transition: 0.2s;
+        }
+
+        #botao_gerar:hover {
+            background-color: #48a879;
+        }
+
+        #retorno {
+            text-align: center;
+            color: #244c3b;
+            margin-top: 15px;
+        }
+
+        #containerPlanilhaExistente {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0,0,0,0.35);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modalPlanilhaExistente {
+            width: 410px;
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            animation: fade 0.25s ease;
+            text-align: center;
+        }
+
+        #modalPlanilhaExistente h1 {
+            font-size: 20px;
+            margin-top: 0;
+            color: #244c3b;
+        }
+
+        .botoes_escolha {
+            margin-top: 25px;
+            display: flex;
+            justify-content: space-evenly;
+        }
+
+        #botaoSim, #botaoNao {
+            border: none;
+            padding: 10px;
+            color: white;
+            border-radius: 6px;
+            width: 110px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        #botaoSim { background-color: #5ac18e; }
+        #botaoNao { background-color: #d96e64; }
+
+        #containerPlanilhaExistente.fechado,
+        #modalPlanilhaExistente.fechado {
+            visibility: hidden;
+            opacity: 0;
+        }
+
+        .bloqueado {
             pointer-events: none;
             user-select: none;
             opacity: 0.4;
         }
 
-        h1{
-            text-align: center;
-        }
-
-        .t_data{
-            user-select: none;
-        }
-
-        #botao_gerar{
-            width: 100%;
-            background-color: rgb(93, 201, 93);
-        }
-
-        #plataforma{
-            width: 100%;
-        }
-
-        #retorno{
-            max-width: 250px;
-            text-align: center;
-        }
-
-        #containerPlanilhaExistente{
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: rgba(128, 128, 128, 0.5);
-            display: flex;
-            flex-flow: row wrap;
-            text-align: center;
-            justify-content: center;
-        }
-
-        #modalPlanilhaExistente{
-            width: 400px;
-            height: 250px;
-            background-color: rgb(209, 237, 223);
-            margin-top: 100px;
-            box-shadow: 2px 2px 15px rgba(0, 0, 0, 0.5);
-            border-radius: 2px;
-            transition: 0.3s;
-            overflow: hidden;
-        }
-
-        #modalPlanilhaExistente h1{
-            font-size: 25px;
-        }
-        
-        .botoes_escolha{
-            display: flex;
-            flex-flow: row wrap;
-            text-align: center;
-            justify-content: space-evenly;
-        }
-
-        #containerPlanilhaExistente.fechado{
-            visibility: hidden;
-        }
-
-        #modalPlanilhaExistente.fechado{
-            visibility: hidden;
-            width: 0;
-            height: 0;
-        }
-
-        #botaoSim{
-            background-color: rgb(93, 201, 93);
-            width: 100px;
-            height: 30px;
-        }
-
-        #botaoNao{
-            background-color: rgb(201, 107, 93);
-            width: 100px;
-            height: 30px;
-        }
+        #div_link_edital.fechado { display: none; }
 
     </style>
-
 </head>
+
 <body>
     <div id="content">
         <h1>Gerar Planilha</h1>
 
         <div class="linha">
-            <input class="t_data" type="radio" id="por_periodo" name="periodo" checked="" onclick="selecionarTipoData('periodo')">
-            <label class="t_data" for="por_periodo" onclick="selecionarTipoData('periodo')">Por Período</label>
-            <input class="t_data" type="radio" id="todos_registros" name="periodo" onclick="selecionarTipoData('tudo')">
-            <label class="t_data" for="todos_registros" onclick="selecionarTipoData('tudo')">Todos os Registros</label>
+            <input class="t_data" type="radio" id="por_periodo" name="tipoFiltro" checked onclick="selecionarTipoFiltro('periodo')">
+            <label for="por_periodo">Por Período</label>
+
+            <input class="t_data" type="radio" id="todos_registros" name="tipoFiltro" onclick="selecionarTipoFiltro('tudo')">
+            <label for="todos_registros">Todos os Registros</label>
+
+            <input class="t_data" type="radio" id="por_link_edital" name="tipoFiltro" onclick="selecionarTipoFiltro('link')">
+            <label for="por_link_edital">Por Link do Edital</label>
         </div>
+
         <br>
+
         <div id="selecionar_data">
             <input type="date" id="data_inicial">
             <label id="ate">&nbsp;até&nbsp;</label>
             <input type="date" id="data_final">
         </div>
-        <br>
+
+        <div id="div_link_edital" class="fechado">
+            <br>
+            <label for="link_edital">Cole o link do edital:</label><br>
+            <input type="text" id="link_edital" placeholder="Ex: https://pncp.gov.br/app/editais/...">
+        </div>
+
+        <br><br>
         <label for="plataforma">Plataforma</label>
-        <br>
         <select id="plataforma">
             <option value="obra">PNCP OBRA</option>
         </select>
 
-        <br>
-        <br>
-        <br>
         <button id="botao_gerar" onclick="gerarPlanilha()">Gerar Planilha</button>
         <p id="retorno"></p>
     </div>
@@ -147,9 +210,7 @@
     <div id="containerPlanilhaExistente" class="fechado">
         <div id="modalPlanilhaExistente" class="fechado">
             <h1>Planilha com mesmo filtro já existente</h1>
-            <br>
             <p>Você deseja sobreescrever a planilha?</p>
-            <br><br>
             <div class="botoes_escolha">
                 <button id="botaoNao" onclick="prosseguirGeracaoPlanilha(false)">Não</button>
                 <button id="botaoSim" onclick="prosseguirGeracaoPlanilha(true)">Sim</button>
@@ -158,30 +219,44 @@
     </div>
 
     <script>
-        function selecionarTipoData(tipo="periodo"){
+        function selecionarTipoFiltro(tipo="periodo"){
             var data_inicial = document.getElementById("data_inicial");
             var data_final = document.getElementById("data_final");
             var ate = document.getElementById("ate");
-            if (tipo == "periodo"){
+            var div_link = document.getElementById("div_link_edital");
+
+            if (tipo === "periodo"){
                 data_inicial.classList.remove("bloqueado");
                 data_final.classList.remove("bloqueado");
                 ate.classList.remove("bloqueado");
-            }else{
+                div_link.classList.add("fechado");
+            }
+            else if (tipo === "tudo") {
                 data_inicial.classList.add("bloqueado");
                 data_final.classList.add("bloqueado");
                 ate.classList.add("bloqueado");
+                div_link.classList.add("fechado");
+            }
+            else if (tipo === "link") {
+                data_inicial.classList.add("bloqueado");
+                data_final.classList.add("bloqueado");
+                ate.classList.add("bloqueado");
+                div_link.classList.remove("fechado");
             }
         }
 
         function gerarPlanilha(){
-            var tipo_data = document.querySelector('input[name="periodo"]:checked').id;
+            var tipoFiltro = document.querySelector('input[name="tipoFiltro"]:checked').id;
             var data_inicial = document.getElementById("data_inicial").value;
             var data_final = document.getElementById("data_final").value;
             var plataforma = document.getElementById("plataforma").value;
+            var link_edital = document.getElementById("link_edital").value;
 
-            console.log(tipo_data, data_inicial, data_final, plataforma);
-            document.getElementById("retorno").innerHTML = "<p style='color:blue;'>Gerando a Planilha...</p>"
-            pywebview.api.gerarPlanilha(tipo_data, data_inicial, data_final, plataforma).then(function(response) {
+            document.getElementById("retorno").innerHTML = "<p style='color:blue;'>Gerando a Planilha...</p>";
+            
+            pywebview.api.gerarPlanilha(
+                tipoFiltro, data_inicial, data_final, plataforma, link_edital
+            ).then(function(response) {
                 document.getElementById("retorno").innerHTML = response;
             });
         }
@@ -189,7 +264,7 @@
         function prosseguirGeracaoPlanilha(valor){
             fecharModal();
             if (valor === true){
-                document.getElementById("retorno").innerHTML = "<p style='color:blue;'>Gerando a Planilha...</p>"
+                document.getElementById("retorno").innerHTML = "<p style='color:blue;'>Gerando a Planilha...</p>";
             }
             pywebview.api.prosseguirGeracaoPlanilha(valor).then(function(response) {
                 document.getElementById("retorno").innerHTML = response;

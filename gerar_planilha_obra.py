@@ -48,19 +48,36 @@ def retornar_nome_planilha(plataforma, d_i, d_f):
 
     return False, nome
 
+def limpar(valor):
+    if not isinstance(valor, str):
+        return valor
+    
+    return (
+        valor.replace("\xa0", " ")
+             .replace("R$", "")
+             .replace("<b>", "")
+             .replace("</b>", "")
+             .strip()
+    )
+
+def ajustar_largura(col, valor, col_widths):
+    largura = len(str(valor)) + 2  # margem
+    if col not in col_widths or largura > col_widths[col]:
+        col_widths[col] = largura
 
 def gerar_excel(filtros, nome):
     try:
-        processos = retornar_processos(filtros)
-        qtd_total = len(processos)
-
-        if qtd_total == 0:
+        processos  = retornar_processos(filtros)
+    
+        if not processos:
             return 0
 
         workbook = xlsxwriter.Workbook(nome + '.xlsx')
         worksheet = workbook.add_worksheet()
+        
+        col_widths = {}
 
-        colunas = [
+        colunas_base = [
             ['Data', 'data', 10],
             ['Situação', 'situacao', 10],
             ['Licitação', 'licitacao', 10],
@@ -78,48 +95,65 @@ def gerar_excel(filtros, nome):
             ['Link Auxiliar', 'link_auxiliar', 50],
             ['Descrição', 'descricao', 30],
         ]
-
+        
+        maior_qtd_itens = max(len(x["itens"]) for x in processos)
         # Cabeçalho
-        cabecalho = [col[0] for col in colunas]
-        worksheet.write_row(0, 0, cabecalho)
+        cabecalho = [col[0] for col in colunas_base]
+        
+        for i in range(1, maior_qtd_itens + 1):
+            cabecalho += [
+                f"Item {i} Nº",
+                f"Item {i} Descrição",
+                f"Item {i} Quantidade"
+                f"Item {i} Valor Unitário",
+                f"Item {i} Valor Total",
+            ]
 
+        # Escrever cabeçalho
+        worksheet.write_row(0, 0, cabecalho)
+        
+        for col_idx, titulo in enumerate(cabecalho):
+            ajustar_largura(col_idx, titulo, col_widths)
+       
         linha_excel = 1
         for processo in processos:
+            itens = processo["itens"]
             linha = []
               
             # extrair data e hora do campo varchar
-            datahora = (processo.get('data_fim_recebimento_proposta') or "").strip()
-
-            if ' ' in datahora:
-                data_abertura, hora_abertura = datahora.split(' ')
+            raw_datahora = limpar(processo.get("data_fim_recebimento_proposta", ""))
+            
+            if " " in raw_datahora:
+                processo["data_abertura"], processo["hora_abertura"] = raw_datahora.split(" ")
             else:
-                data_abertura = datahora
-                hora_abertura = ''
+                processo["data_abertura"] = raw_datahora
+                processo["hora_abertura"] = ""
+            
+            for titulo, campo, _ in colunas_base:
+                valor = limpar(str(processo.get(campo, "")))
+                linha.append(valor)
 
-            processo['data_abertura'] = data_abertura
-            processo['hora_abertura'] = hora_abertura
+            for item in itens:
+                linha.append(item["numero_item"])
+                linha.append(item["descricao_item"])
+                linha.append(item["quantidade_item"])
+                linha.append(item["valor_unit_item"])
+                linha.append(item["valor_total_item"])
 
-            for idx, (titulo, campo, largura) in enumerate(colunas):
-                valor = processo.get(campo, "")
-                if isinstance(valor, str):
-                    valor = valor.replace("<b>", "*").replace("</b>", "*")
-                valor_str = str(valor)
-
-                # Ajusta largura se necessário
-                if len(valor_str) > colunas[idx][2]:
-                    colunas[idx][2] = len(valor_str)
-
-                linha.append(valor_str)
-
+            itens_faltando = maior_qtd_itens - len(itens)
+            linha += [""] * (itens_faltando * 4)
+            
             worksheet.write_row(linha_excel, 0, linha)
+            
+            for col_idx, valor in enumerate(linha):
+                ajustar_largura(col_idx, valor, col_widths)
+                
             linha_excel += 1
-
-        # Ajustar larguras de colunas
-        for col_num, (_, _, largura) in enumerate(colunas):
-            worksheet.set_column(col_num, col_num, largura + 4)
-
-        # Formatação
-        bold_format = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter'})
+            
+        for col_idx, largura in col_widths.items():
+            worksheet.set_column(col_idx, col_idx, largura)
+            
+        bold_format = workbook.add_format({'bold': True, 'align': 'center'})
         worksheet.set_row(0, None, bold_format)
         worksheet.autofilter(0, 0, linha_excel - 1, len(cabecalho) - 1)
         worksheet.freeze_panes(1, 0)
@@ -233,7 +267,7 @@ def js(window):
 nome = ""
 filtros = {}
 class Api:
-    def gerarPlanilha(self, tipo_data, data_inicial, data_final, plataforma):
+    def gerarPlanilha(self, tipo_data, data_inicial, data_final, plataforma, link_edital):
         global nome, filtros
 
         try:
@@ -245,10 +279,15 @@ class Api:
         filtros['data_final'] = data_final.strip()
         filtros['tipo_data'] = tipo_data.strip()
         filtros['plataforma'] = plataforma.strip().lower()
+        filtros['link_edital'] = link_edital.strip() 
 
         if tipo_data == "por_periodo" and filtros['data_inicial'] == "" and filtros['data_final'] == "":
             return "<p style='color:red;'>Deve ser informada a Data Inicial ou a Data Final " \
                            "ou marcar a opção para gerar Todos os Registros</p>"
+                           
+        if tipo_data == "por_link_edital" and  filtros['link_edital'] == "":
+            return "<p style='color:red;'>Deve ser informada o link do Edital</p>"
+            
 
         erro, nome = retornar_nome_planilha(plataforma, data_inicial, data_final)
 

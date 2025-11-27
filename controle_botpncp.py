@@ -4,7 +4,6 @@ import threading
 import time
 from crowlerpncp import *
 from repositoriopncp import *
-from gerar_planilha import *
 from funcoespncp import *
 
 def rodar_crawler_thread(url: str, filtros_locais: dict, notificacao_config: dict,
@@ -134,11 +133,7 @@ def processar_url_alteracoes(plataforma: str):
 
                 except Exception as e:
                     logs.exception(f"Erro ao processar processo: {processo}")
-
-            if processos_planilha:
-                gerar_excel_registros(processos_planilha, plataforma, False)
-
-            # Pode ajustar para rodar de tempos em tempos em vez de loop infinito direto
+        
             time.sleep(300)
 
     except Exception as e:
