@@ -358,8 +358,8 @@ def processar_obra(edital, driver, ids_usuarios, error_timeout, palavras_destaca
         if novos_dados == "TimeoutException":
             return tratar_timeout(edital, error_timeout, ids_usuarios)
         
-        if not palavras_destacadas and not palavra_chave_item:
-            return None, error_timeout
+        #if not palavras_destacadas and not palavra_chave_item:
+            #return None, error_timeout
 
         edital.update(novos_dados)
         edital["itens_dados"] = itens_dados
