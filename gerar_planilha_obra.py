@@ -4,6 +4,7 @@ import xlsxwriter
 import webview
 import os
 import pandas as pd
+import re
 
 
 # pyinstaller --add-data "gerar_planilha_obra.html;." gerar_planilha_obra.py --onefile --noconsole
@@ -22,31 +23,39 @@ def verificar_existencia_planilha(nome):
     return False
 
 
-def retornar_nome_planilha(plataforma, d_i, d_f):
+def limpar_nome_arquivo(nome):
+    nome = re.sub(r'[\\/:*?"<>|]', '_', nome)
+    nome = nome.strip()
+    return nome or "arquivo"
+
+def retornar_nome_planilha(plataforma, d_i, d_f, link):
     nome = "planilha"
 
     if plataforma != "" and plataforma != "todos":
         nome = nome + "_" + plataforma
 
     try:
-        d1, d2 = retornar_periodo_processos()
+        if link != "":
+            nome += "_" + limpar_nome_arquivo(link)   
+        else:
+            d1, d2 = retornar_periodo_processos()
+            if d_i == "":
+                d_i = d1
 
-        if d_i == "":
-            d_i = d1
+            if d_f == "":
+                d_f = d2
 
-        if d_f == "":
-            d_f = d2
+            if d_i != "":
+                nome += "_" + format_data(d_i)
 
-        if d_i != "":
-            nome += "_" + format_data(d_i)
-
-        if d_f != "":
-            nome += "_" + format_data(d_f)
+            if d_f != "":
+                nome += "_" + format_data(d_f)
     except:
         return True, "Não foi possível se conectar ao banco de dados, verifique se a configuração de conexão " \
                      "no arquivo .config está correta."
 
-    return False, nome
+    nome_final = limpar_nome_arquivo(nome)
+    return False, nome_final
 
 def limpar(valor):
     if not isinstance(valor, str):
@@ -61,7 +70,25 @@ def limpar(valor):
     )
 
 def ajustar_largura(col, valor, col_widths):
-    largura = len(str(valor)) + 2  # margem
+    texto = str(valor).strip()
+    largura = len(texto) + 2  # margem
+    
+    # --- limites por categoria ---
+    if texto.startswith("http"):
+        max_width = 45  # links
+    elif "@" in texto:
+        max_width = 25  # emails, caso apareça
+    elif any(keyword in texto.lower() for keyword in ["descricao", "descrição"]):
+        max_width = 30
+    elif texto.replace('.', '').replace(',', '').isdigit():
+        max_width = 12  # números, valores
+    elif len(texto) > 200:
+        max_width = 30  # descrições muito grandes
+    else:
+        max_width = 20  # padrão geral
+
+    largura = min(largura, max_width)
+    
     if col not in col_widths or largura > col_widths[col]:
         col_widths[col] = largura
 
@@ -104,7 +131,7 @@ def gerar_excel(filtros, nome):
             cabecalho += [
                 f"Item {i} Nº",
                 f"Item {i} Descrição",
-                f"Item {i} Quantidade"
+                f"Item {i} Quantidade",
                 f"Item {i} Valor Unitário",
                 f"Item {i} Valor Total",
             ]
@@ -289,7 +316,7 @@ class Api:
             return "<p style='color:red;'>Deve ser informada o link do Edital</p>"
             
 
-        erro, nome = retornar_nome_planilha(plataforma, data_inicial, data_final)
+        erro, nome = retornar_nome_planilha(plataforma, data_inicial, data_final, link_edital)
 
         if erro:
             return f"<p style='color:red;'>{nome}</p>"
