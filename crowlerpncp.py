@@ -26,8 +26,9 @@ from unidecode import unidecode
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, ElementClickInterceptedException
 from PyPDF2 import PdfReader, PdfWriter
+from selenium.webdriver.common.action_chains import ActionChains
 
 # Imports de módulos locais
 from funcoespncp import *
@@ -416,43 +417,40 @@ def validar_modalidade_obras (texto):
         return True
 
 def validar_palavras(texto=None, itens=None, filtrosBase=None):
-    palavras_encontradas = []
+    encontradas = []
     palavras_chave_dict = filtrosBase['banco']['palavraschave']
 
-    # --- Caso seja texto único ---
     if texto is not None:
         pos_objeto = texto.lower().find("objeto:")
         if pos_objeto == -1:
             return []
-
-        texto_original = texto[pos_objeto + len("Objeto:"):].strip()
+        texto_original = texto[pos_objeto + len("objeto:"):].strip()
         text_list = [texto_original]
 
-    # --- Caso seja lista de itens ---
     elif itens is not None:
         text_list = [item.get("descricaoItem", "") for item in itens]
-
     else:
-        return []  # nenhum parâmetro válido
+        return []
 
     for txt in text_list:
         texto_normalizado = unidecode(txt.lower())
 
         for palavra_chave, palavras_bloqueadas in palavras_chave_dict.items():
-            if palavra_chave not in texto_normalizado:
+            chave_com_espacos = palavra_chave.replace("_", " ")
+            chave_norm = unidecode(chave_com_espacos.lower())
+
+            padrao = r"\b" + re.escape(chave_norm).replace(r"\ ", r"[\s\-]+") + r"\b"
+
+            if not re.search(padrao, texto_normalizado):
                 continue
 
-            if any(re.search(rf'\b{re.escape(pb)}\b', texto_normalizado) for pb in palavras_bloqueadas):
+            if any(re.search(rf"\b{re.escape(unidecode(pb.lower()))}\b", texto_normalizado)
+                   for pb in palavras_bloqueadas):
                 continue
             
-            palavras = txt.split()
-            palavras_encontradas.extend([
-                w.strip(string.punctuation)
-                for w in palavras
-                if unidecode(w.lower()).startswith(palavra_chave)
-            ])
+            encontradas.append(chave_com_espacos)
 
-    return palavras_encontradas
+    return encontradas
     
 def classificar_licitacao(descricao: str):
     prompt = f"""
@@ -684,18 +682,27 @@ def extrair_dados_itens(driver, edital):
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper"))
             )
-            elementos_itens =  driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[1]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
-            rows = elementos_itens.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
-            campos_itens =  []
-            for row in rows:
-                campos_itens.append({
-                    "numeroItem":    safe_text(row, "datatable-body-cell:nth-child(1) span"),
-                    "descricaoItem": safe_text(row, "datatable-body-cell:nth-child(2) span"),
-                    "quantidadeItem": safe_text(row, "datatable-body-cell:nth-child(3) span"),
-                    "valorUnitItem": safe_text(row, "datatable-body-cell:nth-child(4) span"),
-                    "valorTotalItem": safe_text(row, "datatable-body-cell:nth-child(5) span")
-                })
+            
+            if not getattr(driver, "exibicao_ajustada", False):
+                ajustar_exibicao_para_50_itens(driver)
+                driver.exibicao_ajustada = True
                 
+            campos_itens =  []
+            while True:
+                elementos_itens =  driver.find_element(By.XPATH, '//*[@id="main-content"]/pncp-item-detail/div/pncp-tab-set/div/pncp-tab[1]/div/div/pncp-table/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller')
+                rows = elementos_itens.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
+                for row in rows:
+                    campos_itens.append({
+                        "numeroItem":    safe_text(row, "datatable-body-cell:nth-child(1) span"),
+                        "descricaoItem": safe_text(row, "datatable-body-cell:nth-child(2) span"),
+                        "quantidadeItem": safe_text(row, "datatable-body-cell:nth-child(3) span"),
+                        "valorUnitItem": safe_text(row, "datatable-body-cell:nth-child(4) span"),
+                        "valorTotalItem": safe_text(row, "datatable-body-cell:nth-child(5) span")
+                    })
+                
+                if not ir_para_proxima_pagina(driver):
+                    break
+                    
             return campos_itens 
         
         except Exception as e:
@@ -708,6 +715,69 @@ def extrair_dados_itens(driver, edital):
                 string_error = type(e).__name__
                 return string_error
     return []
+        
+def click_robusto(driver, element, timeout=10):
+    wait = WebDriverWait(driver, timeout)
+
+    driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'nearest'});", element)
+    time.sleep(0.15)
+
+    try:
+        wait.until(lambda d: element.is_displayed() and element.is_enabled())
+        element.click()
+        return
+    except ElementClickInterceptedException:
+        pass
+
+    try:
+        ActionChains(driver).move_to_element(element).pause(0.05).click().perform()
+        return
+    except Exception:
+        pass
+
+    driver.execute_script("arguments[0].click();", element)
+
+def ajustar_exibicao_para_50_itens(driver):
+    wait = WebDriverWait(driver, 20)
+
+    try:
+        seletor = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//div[contains(@class,'pagination-per-page')]//ng-select")
+        ))
+        click_robusto(driver, seletor)
+
+        wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "ng-dropdown-panel")))
+
+        opcao_50 = wait.until(EC.visibility_of_element_located(
+            (By.XPATH, "//ng-dropdown-panel//span[normalize-space()='50']")
+        ))
+        click_robusto(driver, opcao_50)
+
+        time.sleep(1.2)
+
+    except Exception as e:
+        print("Não foi possível alterar Exibir para 50:", type(e).__name__, str(e))
+        
+def ir_para_proxima_pagina(driver):
+    wait = WebDriverWait(driver, 20)
+
+    try:
+        botao = wait.until(EC.presence_of_element_located((By.ID, "btn-next-page")))
+
+        if (botao.get_attribute("disabled") is not None or "disabled" in (botao.get_attribute("class") or "") or
+            botao.get_attribute("aria-disabled") == "true"):
+            return False
+
+        click_robusto(driver, botao)
+
+        time.sleep(0.3)
+
+        return True
+
+    except Exception as e:
+        print("Não foi possível ir para a próxima página:", type(e).__name__, str(e))
+        return False
+
 
 def safe_text(row, css):
     try:
