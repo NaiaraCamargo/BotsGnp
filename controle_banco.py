@@ -1,7 +1,7 @@
 import webview
 import mysql.connector
 from funcoespncp import *
-from crowlerpncp import crawler
+from crawler_pncp import crawler
 from repositoriopncp import retornar_plataformas, retornar_paginas, retornar_usuarios
 
 # Para gerar executável:

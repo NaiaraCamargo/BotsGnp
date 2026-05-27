@@ -1,4 +1,5 @@
 import html
+import locale
 import os
 import re
 import logging
@@ -6,7 +7,9 @@ from time import sleep
 import unicodedata
 from datetime import datetime, timedelta
 import json
+from urllib.parse import unquote_plus
 import requests
+import unidecode
 
 logs = logging.getLogger('logger1')
 
@@ -44,7 +47,7 @@ configuracoes = {
 
 CAMINHO_CONFIG = "config.json"
 
-def controle_logs(pasta=""):
+def controle_logs():
     global logs
 
     try:
@@ -54,29 +57,27 @@ def controle_logs(pasta=""):
             os.makedirs("logs")
 
         caminho = "logs"
-        if pasta != "":
-            subpasta = os.path.join("logs", pasta)
-            if not os.path.isdir(subpasta):
-                os.makedirs(subpasta)
-            caminho = subpasta
 
         if logs.hasHandlers():
             logs.handlers.clear()
 
         logs.setLevel(logging.DEBUG)
+
         handler1 = logging.FileHandler(
             os.path.join(caminho, f"{hoje.date()}.log"),
-            encoding='utf-8'
+            encoding="utf-8"
         )
         handler1.setLevel(logging.DEBUG)
-        handler1.setFormatter(logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S"))
+        handler1.setFormatter(
+            logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
+        )
         logs.addHandler(handler1)
 
-        dias_limpar_logs = configuracoes.get('dias_limpar_logs', 30)
+        dias_limpar_logs = configuracoes.get("dias_limpar_logs", 30)
         menos_dias = (hoje - timedelta(days=dias_limpar_logs)).date()
 
         for arq in os.listdir(caminho):
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}.log", arq):
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.log", arq):
                 nome_data = arq[:-4]
                 try:
                     data_arquivo = datetime.strptime(nome_data, "%Y-%m-%d").date()
@@ -86,8 +87,8 @@ def controle_logs(pasta=""):
                     pass
 
     except Exception as e:
-        logs.error(f"Controle Logs: {e}")
-
+        print(f"Controle Logs: {e}")
+        raise
 
 def carregar_configuracoes():
     global configuracoes
@@ -195,23 +196,24 @@ def validar_campo_banco(key, dic, comprimento):
                    f" - Comprimento - {str(comprimento)},"
                    f" Valores: {str(dic)} - {str(e)}")
         return ""
-
+    
 
 def validar_item_key(key, dic, key_format="", bold=False, bold_chave=False, is_int=False, barra_n=True, erro=True):
     if key in dic:
+        valor_txt = normalizar_valor_para_texto(dic[key]).strip()
+
         if key_format.strip() != "":
             if bold_chave and not bold:
                 key_format = "<b>" + key_format + "</b>"
-            mssg = key_format + ": " + dic[key]
+            mssg = f"{key_format}: {valor_txt}"
         else:
-            mssg = dic[key]
+            mssg = valor_txt
 
         if bold:
             mssg = "<b>" + mssg + "</b>"
 
-        mssg = mssg.strip()
         if barra_n:
-            mssg = mssg + "\n"
+            mssg += "\n"
 
         return mssg
 
@@ -223,6 +225,13 @@ def validar_item_key(key, dic, key_format="", bold=False, bold_chave=False, is_i
 
     return ""
 
+def normalizar_valor_para_texto(valor):
+    if valor is None:
+        return ""
+    if isinstance(valor, list):
+        # junta tudo (outra opção: pegar só o primeiro)
+        return ", ".join(str(v) for v in valor if v is not None and str(v).strip() != "")
+    return str(valor)
 
 def formatar_data(data="", limpar=True, padrao="universal"):
     try:
@@ -385,7 +394,9 @@ def formatar_mensagem(msg_dict, erro):
          
         #if "horario_termino" in msg_dict:
             #nova_msg += f"<b>TEMPO DE PROCESSAMENTO:</b> <code>{html.escape(str(msg_dict['horario_termino']))}</code>\n\n"
-            
+        
+        if "codigos_catalogo" in msg_dict:
+            nova_msg += f"<b>ITENS VALIDOS: </b> {html.escape(str(msg_dict['codigos_catalogo']))}\n\n"
         # Descrição
         if "Descricao" in msg_dict:
             nova_msg += f"<b>DESCRIÇÃO:</b> {str(msg_dict['Descricao'])}\n\n"
@@ -407,38 +418,27 @@ def limpar_cnpj(cnpj):
     """Remove pontos, barras e traços do CNPJ."""
     return re.sub(r'\D', '', cnpj) if cnpj else cnpj
 
-
-def limpar_valor(valor_str):
-    if not valor_str:
-        return 0.0
-    if "SIGILOSO" in valor_str.upper():
-        return "SIGILOSO"
-    valor_str = valor_str.replace("R$", "").replace(".", "").replace(",", ".").strip()
-    try:
-        return float(valor_str)
-    except:
-        return 0.0
-
-
 def remover_acentos(texto):
       return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
-
 
 def normalizar_unicode(texto):
     # Remove acentuação e caracteres não-ASCII (último recurso)
     return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
 
-
 def normalizar_hifens(texto):
     # Substitui hífens especiais por hífen ASCII padrão "-"
     return re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2212]', '-', texto)
 
-
 def limpar_para_mysql(texto):
+    if texto is None:
+        return None
     if not isinstance(texto, str):
-        return texto
-    texto = normalizar_hifens(texto)
-    texto = unicodedata.normalize("NFKC", texto)  # Normaliza formas compostas para pré-compostas
+        texto = str(texto)
+
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = texto.encode("ascii", "ignore").decode("ascii")
+    texto = texto.strip()
+
     return texto
 
 def remover_acentos_ramos(texto):
@@ -446,4 +446,72 @@ def remover_acentos_ramos(texto):
         c for c in unicodedata.normalize('NFD', texto)
         if unicodedata.category(c) != 'Mn'
     )
+
+def obter_pastas_download(edital, plataforma):
+    try:
+        pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital, plataforma)
+        edital["pasta_edital_original"] = pasta_edital 
+        raiz_local = configuracoes.get("raiz_local")
+        raiz_server = configuracoes.get("raiz_server")
+        pasta_killer = pasta_edital.replace(raiz_local, raiz_server)
+        pasta_killer_comprimidos = pasta_comprimidos.replace(raiz_local, raiz_server)
+        pasta_killer = os.path.normpath(pasta_killer)
+        pasta_killer_comprimidos = os.path.normpath(pasta_killer_comprimidos)
+        
+        return pasta_killer, pasta_killer_comprimidos
+    except Exception as e:
+        return None 
     
+def obter_caminho_edital(edital, plataforma):
+    locale.setlocale(locale.LC_TIME, "Portuguese_Brazil.1252")
+    
+    # Obter datas
+    dia = datetime.today().strftime("%Y-%m-%d")
+    dia_obra = datetime.today().strftime("%m.%d")
+    ano_atual = datetime.today().strftime("%Y")
+    mes_atual = datetime.today().strftime("%B").capitalize()
+    mes_atual = mes_atual.upper()
+
+    orgao_edital = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Orgao", "Desconhecido")).strip())
+    estado = re.sub(r'[\\/:*?"<>|]', '_', str(edital.get("Uf", "Desconhecido")).strip())
+    
+    data_raw = str(edital.get("DataFim", dia_obra)).strip()
+    data_sem_ano = re.sub(r'/\d{4}$', '', data_raw)
+    data_obra = re.sub(r'[\\/:*?"<>|]', '.', data_sem_ano)
+    
+    pasta_downloads = configuracoes.get('pasta_downloads')
+    
+    # Caminho das pastas
+    pasta_dia = os.path.join(pasta_downloads, f"{ano_atual}/{mes_atual}/{dia}")
+    pasta_edital = os.path.join(pasta_dia, f"{data_obra} - {estado} - {orgao_edital}")      
+    pasta_comprimidos = os.path.join(pasta_dia,"Arquivos Comprimidos")
+    
+    return pasta_edital, pasta_dia, pasta_comprimidos
+
+def formatar_valor_sigilo(valor):
+    if valor is None:
+        return "SIGILOSO"
+    if isinstance(valor, str):
+        v = valor.strip().replace(".", "").replace(",", ".")
+        try:
+            valor = float(v)
+        except:
+            return "SIGILOSO"
+    try:
+        valor = float(valor)
+    except:
+        return "SIGILOSO"
+    if valor == 0:
+        return "SIGILOSO"
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def separar_data_hora(dt: str):
+    if not dt:
+        return None, None
+    
+    d = datetime.fromisoformat(dt)
+    
+    data_formatada = d.strftime("%d/%m/%Y")
+    hora_formatada = d.strftime("%H:%M")
+    
+    return data_formatada, hora_formatada

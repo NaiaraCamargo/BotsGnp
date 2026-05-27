@@ -190,7 +190,7 @@ def gerar_excel(filtros, nome):
 
     except Exception as e:
         print(f"Erro ao gerar planilha: {e}")
-        return "Não foi possível gerar a planilha."
+        return f"Não foi possível gerar a planilha {e}."
 
 
 def gerar_excel_registros(processos, plataforma, registros_novos):

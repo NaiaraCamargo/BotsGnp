@@ -12,6 +12,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import psutil
+import traceback
 
 # Imports de módulos locais
 from funcoespncp import *
@@ -38,18 +39,20 @@ def controles_iniciais(driver):
     except Exception as eci:
         logs.error("Controles Iniciais - Problemas nas verificacoes - ", str(eci))
         
-def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
+def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=30):
     def target(q):
         try:
-            with open(os.devnull, 'w') as devnull, contextlib.redirect_stderr(devnull):
+            with open(os.devnull, "w") as devnull, contextlib.redirect_stderr(devnull):
                 if usar_opcao2:
                     caminho_chromedriver = ChromeDriverManager().install()
                     service = Service(executable_path=caminho_chromedriver)
                     driver = webdriver.Chrome(service=service, options=chrome_options)
                 else:
                     driver = webdriver.Chrome(options=chrome_options)
+                    
                 driver.implicitly_wait(10)
                 q.put(driver)
+
         except Exception as e:
             q.put(e)
 
@@ -59,11 +62,19 @@ def iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=10):
     t.join(timeout)
 
     if t.is_alive():
-        raise TimeoutError("Timeout ao iniciar o ChromeDriver")
+        raise TimeoutError(f"Timeout ao iniciar o ChromeDriver após {timeout}s")
+
+    if q.empty():
+        raise RuntimeError("A thread de criação do driver terminou sem retornar resultado.")
 
     result = q.get()
+
     if isinstance(result, Exception):
         raise result
+
+    if result is None:
+        raise RuntimeError("O driver retornou None.")
+
     return result
 
 def encerrar_driver_com_timeout(driver, timeout: int = 15):
@@ -97,40 +108,66 @@ def encerrar_driver_com_timeout(driver, timeout: int = 15):
         
 def criar_driver(mostrar_browser=False):
     profile_dir = tempfile.mkdtemp()
+
     chrome_options = Options()
     chrome_options.add_argument(f"--user-data-dir={profile_dir}")
+    chrome_options.add_argument("--log-level=3")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--remote-debugging-port=0")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-popup-blocking")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
     if not mostrar_browser:
-        chrome_options.add_argument("--headless=new")
-
-    chrome_options.add_argument('--log-level=3')  # Log mínimo
-    driver = None
-
-    # Tenta iniciar Chrome via PATH com timeout
+        chrome_options.add_argument("--headless")      
     try:
-        driver = iniciar_driver_thread(chrome_options)
+        driver = iniciar_driver_thread(chrome_options, usar_opcao2=False, timeout=30)
+
+        if driver is None:
+            raise RuntimeError("A primeira tentativa retornou driver=None.")
+
+        return driver, profile_dir
+
     except Exception as e1:
-        # Segunda tentativa: baixar e usar ChromeDriver com timeout
         try:
-            driver = iniciar_driver_thread(chrome_options, usar_opcao2=True)
+            driver = iniciar_driver_thread(chrome_options, usar_opcao2=True, timeout=30)
+
+            if driver is None:
+                raise RuntimeError("A segunda tentativa retornou driver=None.")
+
+            return driver, profile_dir
+
         except Exception as e2:
             shutil.rmtree(profile_dir, ignore_errors=True)
-
-    return driver, profile_dir
+            raise RuntimeError(
+                f"Falha ao criar driver nas duas tentativas. "
+                f"Primeira tentativa: {e1} | Segunda tentativa: {e2}"
+            ) from e2
 
 
 def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
     try:
         if processar_dia and 5 <= hora_atual < 9:
-            # Substitui o trecho &tam_pagina=XX por &tam_pagina=50
             url = url_base.replace(
                 next((part for part in url_base.split('&') if part.startswith('tam_pagina=')), '&tam_pagina=20'),
                 'tam_pagina=50'
             )
-
         else:
             url = url_base
+
+        if driver is None:
+            raise ValueError("O driver veio None ao tentar acessar a URL.")
+        if not url or not str(url).strip():
+            raise ValueError("A URL está vazia ou inválida.")
+
         driver.get(url)
+
     except Exception as e:
+        import traceback
+        logs.error(f"ERRO ao acessar URL: {str(e)}")
+        logs.error(traceback.format_exc())
         time.sleep(0.2)
         raise
