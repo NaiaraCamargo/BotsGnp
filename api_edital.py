@@ -23,11 +23,6 @@ def get_json(url, params=None, timeout=60, lista_erros_api=None, link_origem=Non
         r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
 
-        print("STATUS:", r.status_code)
-        print("CONTENT-TYPE:", r.headers.get("Content-Type"))
-        print("URL FINAL:", r.url)
-        print(r.text[:500])
-        
         try:
             return r.json()
 

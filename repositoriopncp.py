@@ -141,16 +141,14 @@ def retornar_processos(filtros):
     data_final = filtros.get("data_final", "").strip()
 
     if data_inicial:
-        query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(data), 1, 10), '%d/%m/%Y') >= %s")
+        query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(p.data), 1, 10), '%d/%m/%Y') >= %s")
         parametros.append(data_inicial)
     if data_final:
-        query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(data), 1, 10), '%d/%m/%Y') <= %s")
+        query_parts.append("STR_TO_DATE(SUBSTRING(TRIM(p.data), 1, 10), '%d/%m/%Y') <= %s")
         parametros.append(data_final)
     if link:
         query_parts.append("p.link = %s")
         parametros.append(link)
-          
-    query_parts.append("p.id_page IN (10000, 13213, 13214, 13215, 13216, 13217, 13218)")
 
     where_extra = ""
     if query_parts:
