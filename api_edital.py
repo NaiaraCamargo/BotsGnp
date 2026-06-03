@@ -71,7 +71,7 @@ def get_json(url, params=None, timeout=60, lista_erros_api=None, link_origem=Non
         return None
 
 
-def get_int(url, params=None, timeout=30, lista_erros_api=None, link_origem=None) -> int:
+def get_int(url, params=None, timeout=30) -> int:
     r = requests.get(url, params=params, timeout=timeout)
     r.raise_for_status()
     try:
@@ -99,7 +99,7 @@ def buscar_compra_e_itens(cnpj: str, ano: int, sequencial: int, link, timeout=30
             return None, 0, []
 
         qtd_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens/quantidade"
-        qtd = get_int(qtd_url, timeout=timeout, lista_erros_api=lista_erros_api, link_origem=link)
+        qtd = get_int(qtd_url, timeout=timeout)
 
         if not isinstance(qtd, int) or qtd <= 0:
             return compra, 0, []

@@ -242,13 +242,13 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
                                 filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
                                 lista_erros_api, termo_busca, id_plataforma, termo_original):
     try:
-        print(f"Total Processados {palavra_chave}: {total_processados}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
-        logs.info(f"Total Processados {palavra_chave}: {total_processados}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
+        print(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
+        logs.info(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
             url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
-            print(f"Iniciando processamento da palavra_chave: {palavra_chave} na página: {pagina} url: {url}\n")
-            logs.info(f"Iniciando processamento da palavra_chave: {palavra_chave} na página: {pagina} url: {url}\n")
+            print(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
+            logs.info(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
 
             driver.get(url)
             listaElementos = []

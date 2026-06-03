@@ -126,18 +126,25 @@ def config(nome, texto=True):
         print(f"Configuração '{nome}' não encontrada.")
         return None
         
-def enviar_mensagem(msg, usuarios_notificar, novo_processo, erro = False):
+def enviar_mensagem(msg, usuarios_notificar,  botObras=False, botBool=False, erro = False):
     try:
+        link_edital = msg.get("Link", "sem_link") if isinstance(msg, dict) else "sem_link"
+        
         msg = formatar_mensagem(msg, erro)
 
-        token_enviar = configuracoes.get('token_telegram', "")
+        token_enviar = configuracoes.get('token_telegram_obras', "")
+        
+        usuarios_envio = usuarios_notificar.copy()
 
-        if not novo_processo and configuracoes.get('token_telegram_alterados', "") !="":
-            token_enviar =  configuracoes.get('token_telegram_alterados', "")
-            logs.info(f"Enviar Mensagem: Token Telegram configurado para - {token_enviar}")
+        if not erro:
+            if not botObras:
+                usuarios_envio.remove('-1002657878005') if '-1002657878005' in usuarios_envio else None
+
+            if not botBool:
+                usuarios_envio.remove('-1004295198662') if '-1004295198662' in usuarios_envio else None
        
         if msg  != "" and token_enviar != "":
-            for usuario_notificar in usuarios_notificar:
+            for usuario_notificar in usuarios_envio:
                 tentativas = 3
                 for tentativa in range(tentativas):
                     try:
@@ -154,7 +161,7 @@ def enviar_mensagem(msg, usuarios_notificar, novo_processo, erro = False):
                         response = requests.post(url, data=payload)
                         
                         if response.status_code == 200:
-                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {msg}")
+                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {link_edital}")
                         else:
                             logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
 
@@ -515,3 +522,23 @@ def separar_data_hora(dt: str):
     hora_formatada = d.strftime("%H:%M")
     
     return data_formatada, hora_formatada
+
+def converter_moeda_brl_para_float(valor):
+    try:
+        if valor is None:
+            return 0
+
+        valor = str(valor).strip()
+
+        if valor.upper() == "SIGILOSO":
+            return 0
+
+        valor = valor.replace("R$", "")
+        valor = valor.replace(".", "")
+        valor = valor.replace(",", ".")
+        valor = valor.strip()
+
+        return float(valor)
+    except Exception as e:
+        logs.error(f"Erro ao converter valor: {valor} - {e}")
+        return 0

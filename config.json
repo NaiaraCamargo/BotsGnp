@@ -1,6 +1,6 @@
 {
-    "token_telegram": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
-    "token_telegram_alterados": "6897682861:AAHl__Zb__STWUi3Uhr37vS07J-4JHo_ETY",
+    "token_telegram_obras": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
+    "token_telegram_bool": "8828821807:AAHfxy3TjUe9ZURnSM_mOAinvkEqTSYeGOg",
     "dias_limpar_logs": 30,
     "conexao_banco": {
         "host": "localhost",
