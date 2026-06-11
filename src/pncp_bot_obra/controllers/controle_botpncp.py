@@ -168,7 +168,10 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
     except Exception:
         pass
 
+    #PRD
     schedule.every().day.at("07:00").do(rotina_envio_planilha_botbool_7h)
+    
+    #DEBUG
     #schedule.every(10).seconds.do(rotina_envio_planilha_botbool_7h)
 
     threading.Thread(

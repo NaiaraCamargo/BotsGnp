@@ -731,9 +731,10 @@ def retornar_processos_botbool_ontem():
                     FROM processos_botbool_envio b
                     INNER JOIN processos p ON p.id = b.id_processo
                     LEFT JOIN processos_pncp pn ON pn.id_processo = p.id
-                    WHERE b.enviado_email = 0
-                      AND b.data_registro >= '2026-06-03' AND b.data_registro < CURDATE()
-                      ORDER BY p.created_at ASC
+                     WHERE b.enviado_email = 0
+                      AND b.data_registro >= CURDATE() - INTERVAL 1 DAY
+                      AND b.data_registro < CURDATE()
+                    ORDER BY p.created_at ASC
                 """)
 
                 registros = cursor.fetchall()
