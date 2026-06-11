@@ -1,0 +1,67 @@
+{
+    "token_telegram_obras": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
+    "token_telegram_bool": "8828821807:AAHfxy3TjUe9ZURnSM_mOAinvkEqTSYeGOg",
+    "dias_limpar_logs": 30,
+    "conexao_banco": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "217799",
+        "database": "gnpobras"
+    },
+    "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
+    "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
+    "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/SEGURO/",
+    "raiz_local": "D:/PROGRAMAS GNP",
+    "raiz_server": "//Killer",
+    "extensoes_imgs": [
+        ".jpeg",
+        ".png",
+        ".jpg"
+    ],
+    "extensoes_planilhas": [
+        ".xlsm",
+        ".csv",
+        ".ods"
+    ],
+    "formatos_para_docx": [
+        ".docm",
+        ".doc",
+        ".dotx",
+        ".dotm",
+        ".dot",
+        ".xps",
+        ".rtf",
+        ".txt",
+        ".xml",
+        ".odt"
+    ],
+    "extensoes_validas": [
+        ".pdf",
+        ".zip",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".jpeg",
+        ".png",
+        ".rar",
+        ".odt"
+    ],
+    "limite_kb": 10000,
+    "processar_todos_obra": false,
+    "processar_todos_pintura": false,
+    "processar_todos_reforma": false,
+    "processar_todos_projeto_arquitetonico": false,
+    "processar_todos_asbuilt": false,
+    "processar_todos_construcao": false,
+    "processar_todos_poco_artesiano": false,
+    "processar_dia": true,
+
+    "email_planilha_botbool": {
+        "email_remetente": "naiarascamargo@gmail.com",
+        "senha_email": "vvfh nsta jrbn podf",
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587
+    }
+}
