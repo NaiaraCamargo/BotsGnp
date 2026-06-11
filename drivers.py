@@ -17,6 +17,8 @@ import traceback
 # Imports de módulos locais
 from funcoespncp import *
 from repositoriopncp import *
+from controle_logs import logs
+
 
 def controles_iniciais(driver):
     try:

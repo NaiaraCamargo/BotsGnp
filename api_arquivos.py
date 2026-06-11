@@ -6,7 +6,6 @@ import math
 import os
 import re
 import shutil
-import locale
 import zipfile
 import mimetypes
 from datetime import datetime
@@ -20,6 +19,7 @@ from unidecode import unidecode
 from PyPDF2 import PdfReader, PdfWriter
 import os
 import pandas as pd
+from controle_logs import *
 
 PNCP = "https://pncp.gov.br/api/pncp/v1"
 

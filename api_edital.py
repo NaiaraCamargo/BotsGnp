@@ -1,6 +1,8 @@
 import re
 import requests
+import json
 from funcoespncp import *
+from controle_logs import logs
 
 CONSULTA = "https://pncp.gov.br/api/consulta/v1"
 PNCP = "https://pncp.gov.br/pncp-api/v1"
@@ -136,17 +138,17 @@ def montar_novos_campos(compra: dict, qtd, link, palavras_destacadas):
             "NumeroAux": compra.get("numeroCompra") or None,
             "IdContratacaoPncp": compra.get("numeroControlePNCP"),
             "Licitacao": compra.get("modalidadeNome"),
-            "Data": compra.get("dataPublicacaoPncp"),
+            "Data": formatar_data_hora_string(compra.get("dataPublicacaoPncp", "")),
             "Orgao": compra.get("orgaoEntidade", {}).get("razaoSocial", ""),
             "Municipio": compra.get("unidadeOrgao", {}).get("municipioNome", "")  + '/' + compra.get("unidadeOrgao", {}).get("ufSigla", "") ,
             "Uf": compra.get("unidadeOrgao", {}).get("ufSigla", ""),
             "Descricao": descricao_tratada,
             "Cnpj": compra.get("orgaoEntidade", {}).get("cnpj", ""),
-            "DataInicioRecebimentoProposta": compra.get("dataAberturaProposta"),
+            "DataInicioRecebimentoProposta": formatar_data_hora_string(compra.get("dataAberturaProposta", "")),
             "CodigoUnidadeCompradora":  compra.get("unidadeOrgao", {}).get("codigoUnidade", ""),
             "ModoDeDisputa": compra.get("modoDisputaNome"),
             "Situacao": compra.get("situacaoCompraNome"),
-            "DataFimRecebimentoProposta": compra.get("dataEncerramentoProposta"),
+            "DataFimRecebimentoProposta": formatar_data_hora_string(compra.get("dataEncerramentoProposta", "")),
             "DataFim": data_fim,
             "HoraFim": hora_fim,
             "ValorTotalEstimadoCompra": formatar_valor_sigilo(compra.get("valorTotalEstimado")),

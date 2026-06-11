@@ -1,20 +1,89 @@
+import threading
 from sys import argv
 import asyncio
-import threading
 import time
 import uuid
-import random
 from urllib.parse import urlparse, parse_qs, unquote_plus
 import re
-import logging
 import traceback
 from crawler_pncp import *
 from repositoriopncp import *
 from funcoespncp import *
+import schedule
+import time
+from datetime import datetime, timedelta
+from controle_logs import *
+from controle_config import *
+
+from controle_planilha_bool import (
+    gerar_excel_botbool_dia_anterior,
+    enviar_email_com_planilha,
+)
+
+def iniciar_agendador_planilha():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+def rotina_envio_planilha_botbool_7h():
+    try:
+        ontem = (datetime.now() - timedelta(days=1)).date()
+        
+        processos = retornar_processos_botbool_ontem()
+        
+        if not processos:
+            logs.info("Nenhum processo BotBool do dia anterior para enviar por e-mail.")
+            return
+
+        caminho, total = gerar_excel_botbool_dia_anterior(processos)
+
+        if not caminho or total == 0:
+            logs.info("Nenhum edital BotBool do dia anterior para enviar por e-mail.")
+            return
+
+        emails_destino = retornar_emails_planilha_botbool()
+
+        if not emails_destino:
+            logs.error("Nenhum e-mail ativo configurado para receber a planilha BotBool.")
+            return
+
+        config_email = configuracoes["email_planilha_botbool"]
+
+        assunto = f"Relatório Licitações de OBRAS - {ontem.strftime('%d/%m/%Y')} - GNP CONSULTORIA"
+
+        corpo = f"""Bom dia,
+
+    Segue em anexo a planilha com os editais BotBool do dia anterior.
+
+    Data de referência: {ontem.strftime('%d/%m/%Y')}
+    Quantidade de editais: {total}
+
+    Atenciosamente,
+    Bot PNCP
+    """
+
+        enviado = enviar_email_com_planilha(
+            caminho_arquivo=caminho,
+            emails_destino=emails_destino,
+            assunto=assunto,
+            corpo=corpo,
+            email_remetente=config_email["email_remetente"],
+            senha_email=config_email["senha_email"],
+            smtp_host=config_email.get("smtp_host", "smtp.gmail.com"),
+            smtp_port=int(config_email.get("smtp_port", 587))
+        )
+
+        if enviado:
+            logs.info(f"Planilha BotBool enviada com sucesso: {caminho}")
+            limpar_arquivo(caminho)
+        else:
+            logs.error("Não foi possível enviar a planilha BotBool.")
+    except Exception as e:
+        logs.exception(f"Erro na rotina de envio da planilha BotBool: {e}")
+
 
 def rodar_crawler(url: str, filtros_locais: dict, notificacao_config: dict, mostrar_browser: bool):
     crawler(url, filtros=filtros_locais, notificacao_config=notificacao_config,mostrar_browser=mostrar_browser)
-
 
 def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict, mostrar_browser: bool, data_inicial: str, data_final: str, format_data: str):
 
@@ -38,7 +107,8 @@ def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict, most
     filtros_locais['banco'].update({
         "data_inicial": data_inicial or filtros_locais['banco']["ultima_data"],
         "data_final": data_final or formatar_data(limpar=False, padrao=format_data),
-        "qtd_registros": dados_url.get("qtd_registros", 0)
+        "qtd_registros": dados_url.get("qtd_registros", 0),
+        "filter": dados_url.get("filter", "")
     })
 
     notificacao_config = {
@@ -59,6 +129,7 @@ async def executar_job_async(job: dict, plataforma: str, filtros: dict, mostrar_
         "ultima_data": job.get("ultima_data"),
         "ids_usuario": job.get("ids_usuario", []),
         "qtd_registros": job.get("qtd_registros", 0),
+        "filter": job.get("filter", ""),
     }
 
     # roda função bloqueante num thread do asyncio
@@ -97,20 +168,24 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
     except Exception:
         pass
 
+    schedule.every().day.at("07:00").do(rotina_envio_planilha_botbool_7h)
+    #schedule.every(10).seconds.do(rotina_envio_planilha_botbool_7h)
+
+    threading.Thread(
+        target=iniciar_agendador_planilha,
+        daemon=True
+    ).start()
+        
     while True:
         try:  
             # limpeza/refresh de config a cada X tempo (AGORA FAZ SENTIDO)
             if time.time() - ultima_limpeza >= limpar_a_cada_seg:
-                print(f"[{worker_id}] 2 - vai limpar/recarregar")
                 try:
                     limpar_console()
                     carregar_configuracoes()
                 finally:
                     ultima_limpeza = time.time()
-                    
-            # garante que os jobs existam
-            # enfileirar_paginas_plataforma(plataforma)
-        
+            
             # pega 1 job
             job = pegar_proximo_job(plataforma, worker_id)
             if not job:
@@ -120,8 +195,8 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
                 continue
 
             started = time.time()
-            print(f"[{worker_id}] START job={job['job_id']} page={job['id_page']} url={job['url']}")
-            logs.info(f"[{worker_id}] START job={job['job_id']} page={job['id_page']} url={job['url']}")
+            print(f"[{worker_id}] START job={job['job_id']} page={job['id_page']} nome={job['name']} url={job['url']}")
+            logs.info(f"[{worker_id}] START job={job['job_id']} page={job['id_page']} nome={job['name']} url={job['url']}")
             
             heartbeat_stop = asyncio.Event()
             
@@ -152,7 +227,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             except asyncio.TimeoutError:
                 dur = time.time() - started
                 err = f"Timeout do job após {timeout_job_seg}s (duracao={dur:.1f}s)"
-                logs.error(f"[{worker_id}] TIMEOUT job={job['job_id']} page={job['id_page']} {err}")
+                logs.error(f"[{worker_id}] TIMEOUT job={job['job_id']} page={job['id_page']} nome={job['name']} {err}")
                 falhar_job_queue(job["job_id"], err)
 
             except Exception as e:
@@ -209,3 +284,5 @@ if __name__ == '__main__':
             if argv[3] == "true" or argv[3] == "t" or argv[3] == "1":
                 primeira_exe = True
             bot(argv[1], argv[2], primeira_exe)'''
+            
+            

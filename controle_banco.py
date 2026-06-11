@@ -3,6 +3,7 @@ import mysql.connector
 from funcoespncp import *
 from crawler_pncp import crawler
 from repositoriopncp import retornar_plataformas, retornar_paginas, retornar_usuarios
+from controle_config import carregar_configuracoes, config
 
 # Para gerar executável:
 # pyinstaller controle_banco.py --add-data="controle.html;." --onefile

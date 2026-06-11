@@ -8,12 +8,15 @@ from selenium.webdriver.common.by import By
 
 from controle_metadados import ControleMetadados
 from drivers import criar_driver, encerrar_driver_com_timeout, acessar_url, controles_iniciais
-from funcoespncp import (
+from controle_logs import (
     logs,
-    configuracoes,
-    controle_logs,
-    carregar_configuracoes 
+    controle_logs,   
 )
+from controle_config import(
+    configuracoes, 
+    carregar_configuracoes
+    ) 
+
 from repositoriopncp import (
     retornar_registro_paginas,
     retornar_termos_busca_by_id_page,
@@ -29,8 +32,6 @@ from urls_pncp import gerar_urls_variantes_pncp
 lock_pos_login = Lock()
 editais_em_processamento = set()
 lock_editais = Lock()
-
-retornoMsg = ""
             
 metadados = ControleMetadados()
 
@@ -146,8 +147,9 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
         logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
         raise
 
-def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, quantidade_para_processar, 
-                    pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, termo_busca, id_plataforma, termo_original):
+def processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, quantidade_para_processar, 
+                    pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, 
+                    termo_busca, id_plataforma, termo_original):
     try:
         controles_iniciais(driver)
 
@@ -161,7 +163,7 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
             return total_processados
     
         total_itens = total_itens_tmp if total_itens_tmp > 0 else int(match.group(1))
-        registros = int(filtrosBase["banco"].get("qtd_registros", 0) or 0)
+        registros = int(filtros_base["banco"].get("qtd_registros", 0) or 0)
 
         if  total_itens == registros:
             print(f"Execução interrormpida pelo processo de Heurística - {registros}/{total_itens}\n")
@@ -184,7 +186,7 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
         if not novalistaElementos:
             return total_processados
         
-        palavra_chave = list(filtrosBase['banco']['palavraschave'].keys())[0].strip().lower()
+        palavra_chave = list(filtros_base['banco']['palavraschave'].keys())[0].strip().lower()
         
         quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos = calcular_quantidade_para_processar(
             total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave
@@ -197,14 +199,14 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
                 print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}")
                 
                 edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
-                    processar_dia,filtrosBase, lock_editais, editais_em_processamento, error_timeout,lista_erros_api)
+                    processar_dia,filtros_base, lock_editais, editais_em_processamento, error_timeout, lista_erros_api, termo_busca)
 
         except Exception as e:
             logs.error(f"Erro no processamento: {e}\n")    
                 
         if processar_todos or processa_mais_paginas:
             return processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, 
-                notificacao_config, filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, 
+                notificacao_config, filtros_base, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, 
                 lista_erros_api, termo_busca, id_plataforma, termo_original)
         
         if termo_busca == termo_original:
@@ -239,7 +241,7 @@ def calcular_quantidade_para_processar(total_itens, registros, quantidade_para_p
     return quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos
 
 def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, notificacao_config, 
-                                filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
+                                filtros_base, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
                                 lista_erros_api, termo_busca, id_plataforma, termo_original):
     try:
         print(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
@@ -255,7 +257,7 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
             
             total_antes = total_processados
             
-            total_processados = processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados,
+            total_processados = processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados,
                             quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config,
                             total_itens_tmp,lista_erros_api, termo_busca, id_plataforma, termo_original)
             

@@ -1,7 +1,7 @@
 import sqlite3
 
 from os.path import isfile
-from funcoespncp import logs
+from controle_logs import logs
 
 
 class ControleMetadados:

@@ -1,5 +1,5 @@
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-from funcoespncp import logs
+from controle_logs import logs
 
 def gerar_urls_variantes_pncp(url_base, termos_variantes):
     try:

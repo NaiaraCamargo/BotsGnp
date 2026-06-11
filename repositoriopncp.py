@@ -3,13 +3,12 @@ from ast import literal_eval
 from uuid import uuid4
 import mysql.connector
 from funcoespncp import *
-from unidecode import unidecode
 from threading import Lock
-import random
 import json
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs, unquote_plus
 import mysql.connector.plugins.mysql_native_password
+from controle_config import config
 
 lock_insercao = Lock()
 
@@ -215,8 +214,8 @@ def retornar_plataformas(id_plat=''):
                                         usuarios_crawler_python.email as usuario_email,
                                         pages.url as url
                                 from plataformas 
-                                    inner join plataformas_page on plataformas.id = plataformas_page.id_pataforma
-                                    inner join plataforma_page_usuarios on plataformas_page.id = plataforma_page_usuarios.id_pataforma_pages
+                                    inner join plataformas_page on plataformas.id = plataformas_page.id_plataforma
+                                    inner join plataforma_page_usuarios on plataformas_page.id = plataforma_page_usuarios.id_plataforma_pages
                                     inner join usuarios_crawler_python on plataforma_page_usuarios.id_usuario_crawler_python = usuarios_crawler_python.id
                                     inner join pages on pages.id = plataformas_page.id_page
                                     {'' if id_plat == '' else f'AND plataformas.id = {id_plat}'}""")
@@ -268,12 +267,12 @@ def retornar_usuarios(trazer_plataformas=False):
                                         usuarios_crawler_python.id_telegram as id_telegram, 
                                         usuarios_crawler_python.email as email,
                                         plataforma_page_usuarios.is_active as usuario_pagina_ativo,
-                                        plataformas_page.id_pataforma as id_plataforma, 
+                                        plataformas_page.id_plataforma as id_plataforma, 
                                         pages.id as pagina_id, 
                                         pages.url as url
                                     from usuarios_crawler_python 
                                     inner join plataforma_page_usuarios on plataforma_page_usuarios.id_usuario_crawler_python = usuarios_crawler_python.id
-                                    inner join plataformas_page on plataformas_page.id = plataforma_page_usuarios.id_pataforma_pages
+                                    inner join plataformas_page on plataformas_page.id = plataforma_page_usuarios.id_plataforma_pages
                                     inner join pages on plataformas_page.id_page = pages.id;""")
 
                 for r in cursor.fetchall():
@@ -337,25 +336,26 @@ def verificar_existencia_edital_new(link):
         with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
                                      password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao: 
             with conexao.cursor(dictionary=True) as cursor:
-                resultado = []
+                resultado = None
 
                 # Buscar por link
                 if link != "":
-                    cursor.execute(f"""SELECT * FROM processos WHERE link = '{link}';""")
-                    resultado = cursor.fetchall()
-
-                # # Se nao encontrar por link busca por Orgao e Numero
-                # if len(resultado) == 0 and orgao != "" and numero != "":
-                #     cursor.execute(f"""SELECT * FROM processos 
-                #                        WHERE orgao = '{orgao}' 
-                #                        AND numero = '{numero}';
-                #                     """)
-                #     resultado = cursor.fetchall()
-                    
+                    cursor.execute("""
+                                    SELECT 
+                                        p.id,
+                                        p.termos,
+                                        pg.filter
+                                    FROM processos p
+                                    INNER JOIN pages pg ON pg.id = p.id_page
+                                    WHERE p.link = %s;
+                                """, (link,))
+                    resultado = cursor.fetchone()
+                   
             return resultado
                
     except Exception as e:
         logs.info(f"""Erro verificar_existencia_edital_new nao foi possivel conectar ao banco - {str(e)}""")
+        return None
                
 def gravar_processo(cursor, edital):
     try:
@@ -379,7 +379,7 @@ def gravar_processo(cursor, edital):
             validar_campo_banco('Data', edital, 60), validar_campo_banco('Municipio', edital, 200),
             validar_campo_banco('Uf', edital, 2), validar_campo_banco('Licitacao', edital, 100),
             validar_campo_banco('Situacao', edital, 100), validar_campo_banco('Orgao', edital, 200),
-            validar_campo_banco('palavras_chave', edital, 150),
+            validar_campo_banco('termo_busca', edital, 150),
             now,
             now,
             edital.get("envio_notificacao"),
@@ -463,43 +463,85 @@ def gravar_processo_itens(cursor, itens, id_processo):
             raise
       
 def gravar_novo_processo(editalnovo):
-    print(f"Gravar novo processo (por link): {editalnovo.get('Link', 'Link não encontrado')}")
-    
+    link = editalnovo.get("Link", "").rstrip("/")
+
+    print(f"Gravar novo processo (por link): {link or 'Link não encontrado'}")
+
+    if not link:
+        logs.error("\nErro ao gravar novo processo: Link não encontrado no edital.")
+        return None
+
+    conexao = None
+
     try:
-        with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'), 
-                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao: 
-            with conexao.cursor() as cursor:
-                    id_processo = None  # Variável para armazenar o id do novo processo
-                    
-                    # verifica duplicidade
-                    cursor.execute("SELECT id FROM processos WHERE link = %s", (editalnovo['Link'].rstrip('/'),))
-                    if cursor.fetchone():
-                        print(f"Edital já existe no banco (por link), ignorando: {editalnovo['Link']}")
-                        logs.info(f"Edital já existe no banco (por link), ignorando: {editalnovo['Link']}\n")
-                        return True
+        conexao = mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin='mysql_native_password'
+        )
 
-                    id_processo = gravar_processo(cursor, editalnovo)
-                    gravar_processo_pncp(cursor, editalnovo, id_processo)
-                    
-                    if "itens_dados" in editalnovo:
-                        gravar_processo_itens(cursor, editalnovo["itens_dados"], id_processo)
+        with conexao.cursor() as cursor:
 
-                    conexao.commit()
-                    
-                    print(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {id_processo}\n")
-                    logs.info(f"Edital salvo no banco (por link): {editalnovo.get('Link', 'Link não encontrado')} - {id_processo}")
-                    
-                    # Verifica a necessidade de notificação
-                    if editalnovo.get("notificar_retorno") is True:
-                        if id_processo:  # Verifica se o novo id foi obtido
-                            atualizar_envio_notificacao(id_processo, cursor, editalnovo)  # Passa o id para atualizar
+            # Verifica duplicidade e retorna o ID já existente
+            cursor.execute(
+                "SELECT id FROM processos WHERE link = %s LIMIT 1",
+                (link,)
+            )
 
-            return True
+            processo_existente = cursor.fetchone()
+
+            if processo_existente:
+                id_existente = processo_existente[0]
+
+                print(f"\nEdital já existe no banco (por link), ignorando: {link} - {id_existente}")
+                logs.info(f"\nEdital já existe no banco (por link), ignorando: {link} - {id_existente}\n")
+
+                return id_existente
+
+            # Grava novo processo
+            id_processo = gravar_processo(cursor, editalnovo)
+
+            if not id_processo:
+                logs.error(f"\nNão foi possível obter o id_processo ao gravar: {link}\n")
+                conexao.rollback()
+                return None
+
+            gravar_processo_pncp(cursor, editalnovo, id_processo)
+
+            if "itens_dados" in editalnovo and editalnovo["itens_dados"]:
+                gravar_processo_itens(cursor, editalnovo["itens_dados"], id_processo)
+
+            # Atualiza envio de notificação antes do commit
+            if editalnovo.get("notificar_retorno") is True:
+                atualizar_envio_notificacao(id_processo, cursor, editalnovo)
+
+            conexao.commit()
+
+            print(f"Edital salvo no banco (por link): {link} - {id_processo}\n")
+            logs.info(f"\nEdital salvo no banco (por link): {link} - {id_processo}")
+
+            return id_processo
 
     except Exception as ex:
-        logs.error(f"Erro ao gravar novo processo - {editalnovo['Link']} \n ERROR: {ex}")  
-        conexao.rollback()
-        return False
+        logs.error(f"Erro ao gravar novo processo - {link} \n ERROR: {ex}", exc_info=True)
+
+        if conexao:
+            try:
+                conexao.rollback()
+            except Exception:
+                pass
+
+        return None
+
+    finally:
+        if conexao:
+            try:
+                conexao.close()
+            except Exception:
+                pass
               
 def retornar_registro_paginas(idPagina, idPlataforma):
   try:
@@ -509,7 +551,7 @@ def retornar_registro_paginas(idPagina, idPlataforma):
             query = """
                 SELECT qtd_registros 
                 FROM plataformas_page 
-                WHERE id_page = %s AND id_pataforma = %s
+                WHERE id_page = %s AND id_plataforma = %s
             """
             cursor.execute(query, (idPagina, idPlataforma))
             resultado = cursor.fetchone()  # Retorna um único registro
@@ -578,7 +620,7 @@ def salvar_urls_com_erro_api(lista_erros_api, id_pagina=None, plataforma=None):
         logs.error(f"Erro ao salvar URLs com erro de API: {e}", exc_info=True)
         return 0
     
-def retornar_qtd_registros_heuristica_busca(id_page: int, id_pataforma: int, termo_busca: str) -> int:
+def retornar_qtd_registros_heuristica_busca(id_page: int, id_plataforma: int, termo_busca: str) -> int:
     termo_busca = str(termo_busca or "").strip().lower()
 
     if not termo_busca:
@@ -591,10 +633,10 @@ def retornar_qtd_registros_heuristica_busca(id_page: int, id_pataforma: int, ter
                     SELECT qtd_registros
                     FROM plataformas_page_heuristica_busca
                     WHERE id_page = %s
-                      AND id_pataforma = %s
+                      AND id_plataforma = %s
                       AND termo_busca = %s
                     LIMIT 1
-                """, (id_page, id_pataforma, termo_busca))
+                """, (id_page, id_plataforma, termo_busca))
 
                 row = cursor.fetchone()
 
@@ -607,20 +649,22 @@ def retornar_qtd_registros_heuristica_busca(id_page: int, id_pataforma: int, ter
         logs.error(f"Erro retornar_qtd_registros_heuristica_busca: {e}", exc_info=True)
         return 0
     
-def atualizar_heuristica_busca(id_page: int, id_pataforma: int, termo_busca: str, qtd_registros: int):
+def atualizar_heuristica_busca(id_page: int, id_plataforma: int, termo_busca: str, qtd_registros: int):
     termo_busca = str(termo_busca or "").strip().lower()
 
     if not termo_busca:
         termo_busca = "sem_termo"
 
     try:
-        with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'), password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
+        with mysql.connector.connect(host=config('host'), port=int(config('port')), 
+                                    user=config('user'), password=config("password"), 
+                                    database=config("database"), auth_plugin='mysql_native_password') as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO plataformas_page_heuristica_busca
                     (
                         id_page,
-                        id_pataforma,
+                        id_plataforma,
                         termo_busca,
                         qtd_registros,
                         data_ultima_busca,
@@ -635,7 +679,7 @@ def atualizar_heuristica_busca(id_page: int, id_pataforma: int, termo_busca: str
                         qtd_registros = VALUES(qtd_registros),
                         data_ultima_busca = NOW(),
                         updated_at = NOW()
-                """, (id_page, id_pataforma, termo_busca, int(qtd_registros or 0)))
+                """, (id_page, id_plataforma, termo_busca, int(qtd_registros or 0)))
 
             conexao.commit()
 
@@ -646,29 +690,219 @@ def atualizar_heuristica_busca(id_page: int, id_pataforma: int, termo_busca: str
 def retornar_termos_busca_by_id_page(id_pagina):
     termos_busca= []
     try:
-        with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'), password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
-            with conexao.cursor() as cursor:
-                cursor.execute("""
-                    SELECT termo_busca
-                    FROM plataformas_page_heuristica_busca
-                    WHERE id_page = %s
-                    """, (id_pagina,))
-                
-                resultados = cursor.fetchall()
+        with mysql.connector.connect(
+            host=config('host'), 
+            port=int(config('port')), 
+            user=config('user'),
+            password=config("password"), 
+            database=config("database"), 
+            auth_plugin='mysql_native_password'
+            ) as conexao:
+            
+                with conexao.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT termo_busca
+                        FROM plataformas_page_heuristica_busca
+                        WHERE id_page = %s
+                        """, (id_pagina,))
+                    
+                    resultados = cursor.fetchall()
 
-                termos_busca = set()
+                    termos_busca = set()
 
-                for linha in resultados:
-                    termo = linha[0]
+                    for linha in resultados:
+                        termo = linha[0]
 
-                    if termo:
-                        termos_busca.add(termo.strip().lower())
+                        if termo:
+                            termos_busca.add(termo.strip().lower())
 
-                return termos_busca             
+                    return termos_busca             
             
     except Exception as e:
         logs.error(f"Erro retornar_termos_busca_by_id_page: {e}", exc_info=True)
+        
+def retornar_emails_planilha_botbool():
+    try:
+        emails = []
 
+        with mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin="mysql_native_password"
+        ) as conexao:
+
+            with conexao.cursor(dictionary=True) as cursor:
+                cursor.execute("""
+                    SELECT email
+                    FROM email_planilha_botbool
+                    WHERE is_active = 1
+                """)
+
+                registros = cursor.fetchall()
+
+                for item in registros:
+                    email = str(item.get("email", "")).strip()
+
+                    if email:
+                        emails.append(email)
+
+        return emails
+
+    except Exception as e:
+        logs.error(f"Erro ao buscar e-mails da planilha BotBool: {e}", exc_info=True)
+        return []
+    
+def gravar_processo_botbool_envio(id_processo):
+    try:
+        if not id_processo:
+            return False
+
+        with mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin="mysql_native_password"
+        ) as conexao:
+
+            with conexao.cursor() as cursor:
+                cursor.execute("""
+                    INSERT IGNORE INTO processos_botbool_envio (
+                        id_processo,
+                        data_registro,
+                        enviado_email
+                    )
+                    VALUES (
+                        %s,
+                        NOW(),
+                        0
+                    )
+                """, (str(id_processo),))
+
+                conexao.commit()
+
+        return True
+
+    except Exception as e:
+        logs.error(f"Erro ao gravar processo BotBool para envio: {e}", exc_info=True)
+        return False
+
+def retornar_processos_botbool_ontem():
+    processos = []
+    try:
+    
+        with mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin="mysql_native_password"
+        ) as conexao:
+
+            with conexao.cursor(dictionary=True) as cursor:
+                cursor.execute("""
+                    SELECT p.*, pn.*, b.data_registro AS data_registro_botbool,
+                        b.enviado_email,
+                        b.data_envio_email,
+                    (
+                        SELECT JSON_ARRAYAGG(
+                            JSON_OBJECT(
+                                'numero_item', i.numero_item,
+                                'descricao_item', i.descricao_item,
+                                'quantidade_item', i.quantidade_item,
+                                'valor_unit_item', i.valor_unit_item,
+                                'valor_total_item', i.valor_total_item
+                            )
+                        )
+                        FROM processos_itens i
+                        WHERE i.id_processo = p.id
+                    ) AS itens
+                    FROM processos_botbool_envio b
+                    INNER JOIN processos p ON p.id = b.id_processo
+                    LEFT JOIN processos_pncp pn ON pn.id_processo = p.id
+                    WHERE b.enviado_email = 0
+                      AND b.data_registro >= '2026-06-03' AND b.data_registro < CURDATE()
+                      ORDER BY p.created_at ASC
+                """)
+
+                registros = cursor.fetchall()
+
+                for r in registros:
+                    if r.get("itens"):
+                        r["itens"] = json.loads(r["itens"])
+                    else:
+                        r["itens"] = []
+                    processos.append(r)
+
+        return processos
+
+    except Exception as e:
+        logs.error(f"Erro ao retornar processos BotBool do dia anterior: {e}", exc_info=True)
+        return []
+    
+    
+def marcar_processos_botbool_enviados_dia_anterior():
+    try:
+        with mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin='mysql_native_password'
+        ) as conexao:
+
+            with conexao.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE processos_botbool_envio
+                    SET enviado_email = 1,
+                        data_envio_email = NOW()
+                    WHERE DATE(data_registro) = CURDATE() - INTERVAL 1 DAY
+                      AND enviado_email = 0
+                """)
+
+                conexao.commit()
+
+        return True
+
+    except Exception as e:
+        logs.error(
+            f"Erro ao marcar processos BotBool como enviados: {e}",
+            exc_info=True
+        )
+        return False
+    
+def atualizar_termos_edital(id_processo, termos):
+    try:
+        with mysql.connector.connect(
+            host=config('host'),
+            port=int(config('port')),
+            user=config('user'),
+            password=config("password"),
+            database=config("database"),
+            auth_plugin='mysql_native_password'
+        ) as conexao:
+
+            with conexao.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE processos
+                    SET termos = %s, updated_at = NOW()
+                    WHERE id = %s
+                """, (validar_campo_banco('termos', {'termos': termos}, 150), id_processo))
+
+                conexao.commit()
+
+        return True
+
+    except Exception as e:
+        logs.error(f"Erro ao atualizar termos do edital: {e}", exc_info=True)
+        return False
+    
 #####################################################################################
 ######## METODOS PARA FUNCIONALIDADE COM QUEUE(FILA) ################################
 #####################################################################################
@@ -700,18 +934,18 @@ def enfileirar_paginas_plataforma(plataforma: str):
 
                 # enfileira pages ativas (uma por id_page)
                 cursor.execute("""
-                    INSERT INTO plataformas_page_queue (id_pataforma, id_page, prioridade, status, next_run_at)
-                    SELECT pp.id_pataforma,
+                    INSERT INTO plataformas_page_queue (id_plataforma, id_page, prioridade, status, next_run_at)
+                    SELECT pp.id_plataforma,
                            pp.id_page,
                            100,
                            'queued',
                            NOW()
                     FROM plataformas_page pp
                     WHERE pp.is_active = 1
-                      AND pp.id_pataforma = %s
+                      AND pp.id_plataforma = %s
                       AND NOT EXISTS (
                         SELECT 1 FROM plataformas_page_queue q
-                        WHERE q.id_pataforma = pp.id_pataforma
+                        WHERE q.id_plataforma = pp.id_plataforma
                           AND q.id_page = pp.id_page
                           AND q.status IN ('queued','running')
                       )
@@ -756,13 +990,13 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
                     SELECT q.id AS job_id
                     FROM plataformas_page_queue q
                     INNER JOIN plataformas_page pp
-                        ON pp.id_pataforma = q.id_pataforma
+                        ON pp.id_plataforma = q.id_plataforma
                        AND pp.id_page = q.id_page
                        AND pp.is_active = 1
                     INNER JOIN pages pg
                         ON pg.id = q.id_page
                        AND pg.is_active = 1
-                    WHERE q.id_pataforma = %s
+                    WHERE q.id_plataforma = %s
                       AND q.status = 'queued'
                       AND q.next_run_at <= NOW()
                       AND (q.lock_until IS NULL OR q.lock_until < NOW())
@@ -785,7 +1019,7 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
                         locked_by = %s,
                         lock_until = %s
                     WHERE id = %s
-                      AND id_pataforma = %s
+                      AND id_plataforma = %s
                       AND status = 'queued'
                       AND next_run_at <= NOW()
                       AND (lock_until IS NULL OR lock_until < NOW())
@@ -804,13 +1038,15 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
                 cursor.execute("""
                     SELECT 
                         q.id AS job_id,
-                        q.id_pataforma,
+                        q.id_plataforma,
                         q.id_page,
                         q.prioridade,
                         q.attempts,
                         q.max_attempts,
 
                         pg.url,
+                        pg.filter,
+                        pg.name,
 
                         pp.data_ultima_busca AS ultima_data,
                         pp.qtd_registros,
@@ -820,7 +1056,7 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
                     FROM plataformas_page_queue q
 
                     INNER JOIN plataformas_page pp
-                        ON pp.id_pataforma = q.id_pataforma
+                        ON pp.id_plataforma = q.id_plataforma
                        AND pp.id_page = q.id_page
                        AND pp.is_active = 1
 
@@ -829,7 +1065,7 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
                        AND pg.is_active = 1
 
                     LEFT JOIN plataforma_page_usuarios ppu
-                        ON ppu.id_pataforma_pages = pp.id_pataforma
+                        ON ppu.id_plataforma_pages = pp.id_plataforma
                        AND ppu.is_active = 1
 
                     LEFT JOIN usuarios_crawler_python u
@@ -842,7 +1078,7 @@ def pegar_proximo_job(plataforma: str, worker_id: str):
 
                     GROUP BY 
                         q.id,
-                        q.id_pataforma,
+                        q.id_plataforma,
                         q.id_page,
                         q.prioridade,
                         q.attempts,
@@ -986,7 +1222,7 @@ def requeue_jobs_orfaos(plataforma: str, motivo: str = "Requeue geral"):
                         lock_until=NULL,
                         last_error=%s,
                         updated_at=NOW()
-                    WHERE id_pataforma=%s
+                    WHERE id_plataforma=%s
                       AND status IN ('running', 'failed')
                 """, (motivo[:4000], id_plataforma))
                 afetadas = cursor.rowcount
@@ -1034,7 +1270,7 @@ def requeue_sem_heartbeat(plataforma: str, minutos_sem_heartbeat: int = 10, moti
                         lock_until=NULL,
                         last_error=%s,
                         updated_at=NOW()
-                    WHERE id_pataforma=%s
+                    WHERE id_plataforma=%s
                       AND status IN ('running', 'failed')
                       AND updated_at < (NOW() - INTERVAL %s MINUTE)
                 """, (motivo[:4000], id_plataforma, int(minutos_sem_heartbeat)))
