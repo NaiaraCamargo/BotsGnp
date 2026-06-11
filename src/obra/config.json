@@ -26,5 +26,11 @@
     "processar_todos_asbuilt": false,
     "processar_todos_construcao": false,
     "processar_todos_poco_artesiano": false,
-    "processar_dia": true
+    "processar_dia": true,
+    "email_planilha_botbool": {
+        "email_remetente": "",
+        "senha_email": "",
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587
+    }
 }
