@@ -29,4 +29,7 @@ planilhas/
 docs/
 
 # Arquivos Excel na raiz
-/*.xlsx
+*.xlsx
+
+#spec 
+*.spec

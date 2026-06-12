@@ -66,19 +66,18 @@ def pacote_por_plataforma(plataforma):
 
 
 def caminho_base_pacote(nome_pacote):
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / nome_pacote
-
+    # Usado só no debug/projeto
     # controle_config.py está em:
     # src/pncp_shared/config/controle_config.py
-    #
-    # parents[0] = config
-    # parents[1] = pncp_shared
     # parents[2] = src
     return Path(__file__).resolve().parents[2] / nome_pacote
 
-
 def caminho_config(plataforma=None, nome_pacote=None):
+    # Quando for .exe, pega config.json na mesma pasta do executável
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "config.json"
+
+    # Quando for debug/projeto, pega dentro do pacote do bot
     if plataforma:
         nome_pacote = pacote_por_plataforma(plataforma)
     elif nome_pacote:

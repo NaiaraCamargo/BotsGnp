@@ -1,7 +1,7 @@
 {
     "token_telegram_obras": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
     "token_telegram_bool": "8828821807:AAHfxy3TjUe9ZURnSM_mOAinvkEqTSYeGOg",
-    "dias_limpar_logs": 30,
+    "dias_limpar_logs": 10,
     "conexao_banco": {
         "host": "localhost",
         "port": 3306,
@@ -9,10 +9,10 @@
         "password": "217799",
         "database": "gnpobras"
     },
-    "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
+    "UNRAR_TOOL": "C:/BOTGNP/Bot Gnp New/Ferramentas/unrar.exe",
     "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
-    "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/SEGURO/",
-    "raiz_local": "D:/PROGRAMAS GNP",
+    "pasta_downloads": "C:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/OBRAS/",
+    "raiz_local": "C:/PROGRAMAS GNP",
     "raiz_server": "//Killer",
     "extensoes_imgs": [
         ".jpeg",
