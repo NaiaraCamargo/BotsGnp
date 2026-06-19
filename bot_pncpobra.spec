@@ -5,7 +5,7 @@ a = Analysis(
     ['src\\pncp_bot_obra\\bots\\bot_pncpobra.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('src/pncp_bot_obra/config.json', 'pncp_bot_obra'), ('src/pncp_shared/metadata/metadados.db', 'pncp_shared/metadata')],
+    datas=[('src/pncp_shared/metadata/metadados.db', 'pncp_shared/metadata')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
