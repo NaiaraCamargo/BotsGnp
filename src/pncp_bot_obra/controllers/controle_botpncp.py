@@ -16,9 +16,38 @@ from pncp_bot_obra.controllers.controle_planilha_bool import (
 )
 
 from pncp_shared.database.repositoriopncp import *
+from pncp_shared.database.backup_bancos import executar_backup_se_necessario
 from pncp_shared.utils.funcoespncp import *
-from pncp_shared.logs_pncp.controle_logs import *
+from pncp_shared.logs.controle_logs import *
 from pncp_shared.config.controle_config import *
+
+_backup_lock = threading.Lock()
+
+
+def iniciar_backup_banco_periodico(plataforma):
+    if _backup_lock.locked():
+        return
+
+    def rotina_backup():
+        with _backup_lock:
+            try:
+                dias_intervalo = int(configuracoes.get("dias_intervalo_bkp", 2))
+                resultado = executar_backup_se_necessario(
+                    plataforma=plataforma,
+                    dias_intervalo=dias_intervalo,
+                )
+                if resultado.status == "ok":
+                    logs.info(resultado.mensagem)
+                    print(resultado.mensagem)
+                elif resultado.status != "ignorado":
+                    logs.error(resultado.mensagem)
+                else:
+                    logs.info(resultado.mensagem)
+            except Exception as e:
+                logs.exception(f"Erro ao executar backup do banco ({plataforma}): {e}")
+
+    threading.Thread(target=rotina_backup, daemon=True).start()
+
 
 def iniciar_agendador_planilha():
     while True:
@@ -154,6 +183,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
     limpar_console()
     carregar_configuracoes(plataforma)
     controle_logs()
+    iniciar_backup_banco_periodico(plataforma)
     print(f"[{worker_id}] bot_async iniciado (1 por vez)")
 
     ultima_limpeza = time.time()
@@ -186,6 +216,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
                 try:
                     limpar_console()
                     carregar_configuracoes(plataforma)
+                    iniciar_backup_banco_periodico(plataforma)
                 finally:
                     ultima_limpeza = time.time()
             

@@ -3,14 +3,44 @@ import asyncio
 import threading
 import time
 import uuid
-import random
 from urllib.parse import urlparse, parse_qs, unquote_plus
 import re
-import logging
 import traceback
+
 from pncp_bot_material_escolar.crawlers.crawler_pncp import *
 from pncp_shared.database.repositoriopncp import *
+from pncp_shared.database.backup_bancos import executar_backup_se_necessario
 from pncp_shared.utils.funcoespncp import *
+from pncp_shared.logs.controle_logs import *
+from pncp_shared.config.controle_config import *
+
+_backup_lock = threading.Lock()
+
+
+def iniciar_backup_banco_periodico(plataforma):
+    if _backup_lock.locked():
+        return
+
+    def rotina_backup():
+        with _backup_lock:
+            try:
+                dias_intervalo = int(configuracoes.get("dias_intervalo_bkp", 2))
+                resultado = executar_backup_se_necessario(
+                    plataforma=plataforma,
+                    dias_intervalo=dias_intervalo,
+                )
+                if resultado.status == "ok":
+                    logs.info(resultado.mensagem)
+                    print(resultado.mensagem)
+                elif resultado.status != "ignorado":
+                    logs.error(resultado.mensagem)
+                else:
+                    logs.info(resultado.mensagem)
+            except Exception as e:
+                logs.exception(f"Erro ao executar backup do banco ({plataforma}): {e}")
+
+    threading.Thread(target=rotina_backup, daemon=True).start()
+
 
 def rodar_crawler(url: str, filtros_locais: dict, notificacao_config: dict, mostrar_browser: bool):
     crawler(url, filtros=filtros_locais, notificacao_config=notificacao_config,mostrar_browser=mostrar_browser)
@@ -81,8 +111,9 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
     worker_id = f"{plataforma}-async-{uuid.uuid4().hex[:8]}"
 
     limpar_console()
-    carregar_configuracoes()
+    carregar_configuracoes(plataforma)
     controle_logs()
+    iniciar_backup_banco_periodico(plataforma)
     print(f"[{worker_id}] bot_async iniciado (1 por vez)")
 
     ultima_limpeza = time.time()
@@ -104,7 +135,8 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
                 print(f"[{worker_id}] 2 - vai limpar/recarregar")
                 try:
                     limpar_console()
-                    carregar_configuracoes()
+                    carregar_configuracoes(plataforma)
+                    iniciar_backup_banco_periodico(plataforma)
                 finally:
                     ultima_limpeza = time.time()
                     
