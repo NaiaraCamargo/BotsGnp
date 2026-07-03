@@ -1,5 +1,4 @@
 import re
-import shutil
 from itertools import islice
 from datetime import datetime
 from threading import Lock
@@ -7,8 +6,8 @@ from threading import Lock
 from selenium.webdriver.common.by import By
 
 from pncp_shared.metadata.controle_metadados import ControleMetadados
-from pncp_shared.utils.drivers import criar_driver, encerrar_driver_com_timeout, acessar_url, controles_iniciais
-from pncp_shared.logs_pncp.controle_logs import (
+from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais
+from pncp_shared.logs.controle_logs import (
     logs,
     controle_logs,   
 )
@@ -138,10 +137,7 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     salvar_urls_com_erro_api(lista_erros_api, id_pagina=id_pagina, plataforma=plataforma)
             except Exception as e:
                 logs.error(f"Erro ao salvar lista_erros_api: {e}", exc_info=True)
-            if driver:
-                encerrar_driver_com_timeout(driver) 
-            if profile_dir:
-                shutil.rmtree(profile_dir, ignore_errors=True)
+            finalizar_driver(driver, profile_dir, contexto="driver PNCP Obras")
           
     except Exception as e_crawler:
         logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
