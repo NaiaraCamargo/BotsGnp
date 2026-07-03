@@ -3,7 +3,7 @@ import time
 
 from pncp_shared.api.api_arquivos import buscar_arquivos, salvar_arquivos_api
 from pncp_shared.utils.funcoespncp import obter_pastas_download
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
 from pncp_shared.database.repositoriopncp import verificar_existencia_edital_new, gravar_novo_processo
 from pncp_shared.utils.validadores_pncp import (
@@ -18,10 +18,10 @@ from pncp_bot_material_escolar.api.api_edital import (
     montar_itens_campos
 )
 
-def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtrosBase, lock_editais, 
+def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtros_base, lock_editais, 
                     editais_em_processamento, error_timeout, lista_erros_api=None):
     
-    palavras_destacadas = validar_palavras(texto=texto, filtrosBase=filtrosBase)
+    palavras_destacadas = validar_palavras(texto=texto, filtros_base=filtros_base)
 
     edital = extrair_link(texto, urlBase)
     link = edital.get("Link", "").strip()
@@ -48,7 +48,7 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
             logs.info(f"Edital já existe no banco: {resultadoExisteEdital[0]['id']} - {resultadoExisteEdital[0]['link']}\n")
             return None, error_timeout
         
-        edital, error_timeout = processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtrosBase, plataforma, lista_erros_api)
+        edital, error_timeout = processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base, plataforma, lista_erros_api)
 
         return edital, error_timeout
     except Exception as e:
@@ -59,7 +59,7 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
 
     return None, error_timeout
 
-def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtrosBase, plataforma, lista_erros_api):
+def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base, plataforma, lista_erros_api):
     
     try:    
         link = edital["Link"]

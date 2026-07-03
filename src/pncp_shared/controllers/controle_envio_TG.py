@@ -3,7 +3,7 @@ import requests
 import html
 import re
 
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.config.controle_config import configuracoes
 from pncp_shared.utils.funcoespncp import cnpj_formatado
 

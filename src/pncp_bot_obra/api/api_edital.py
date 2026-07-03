@@ -2,7 +2,7 @@ import re
 import requests
 import json
 from pncp_shared.utils.funcoespncp import *
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 
 CONSULTA = "https://pncp.gov.br/api/consulta/v1"
 PNCP = "https://pncp.gov.br/pncp-api/v1"

@@ -4,7 +4,7 @@ from email.message import EmailMessage
 import os
 import smtplib
 import xlsxwriter
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.utils.funcoespncp import separar_data_hora_formatada
 
 def limpar(valor):

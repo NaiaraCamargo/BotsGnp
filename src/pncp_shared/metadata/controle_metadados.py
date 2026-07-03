@@ -1,7 +1,7 @@
 import sqlite3
 
 from os.path import isfile
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 
 
 class ControleMetadados:

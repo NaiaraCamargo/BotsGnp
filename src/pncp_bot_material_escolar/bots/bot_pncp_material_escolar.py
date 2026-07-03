@@ -1,5 +1,5 @@
 import traceback
-from controle_botpncp import bot
+from pncp_bot_material_escolar.controllers.controle_botpncp import bot
 
 if __name__ == "__main__":
     try:

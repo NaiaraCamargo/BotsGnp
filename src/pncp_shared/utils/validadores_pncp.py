@@ -1,6 +1,6 @@
 import re
 from unidecode import unidecode
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 
 def validar_modalidade_obras (texto):
     modalidade = extrair_texto(texto, 'Modalidade da Contratação: ')

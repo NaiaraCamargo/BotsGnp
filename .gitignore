@@ -14,8 +14,9 @@ venv/
 .vs/
 
 # Logs
-logs/
+/logs/
 *.log
+bkp/
 
 # Build
 build/
@@ -33,3 +34,7 @@ docs/
 
 #spec 
 *.spec
+
+#pasta browser
+pncp_shared/resources/browser/*
+src/pncp_shared/resources/browser/

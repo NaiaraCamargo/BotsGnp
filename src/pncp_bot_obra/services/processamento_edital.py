@@ -26,7 +26,7 @@ from pncp_shared.utils.validadores_pncp import (
     extrair_chaves_do_link,
     extrair_texto,
 )
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
 
 def obter_flags_envio(filtros_base, edital_existente=None):
