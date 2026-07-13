@@ -12,6 +12,45 @@ from pncp_shared.utils.funcoespncp import *
 
 lock_insercao = Lock()
 
+def retornar_urls(plataforma):
+    try:
+        retorno_aux = {}
+        with mysql.connector.connect(host=config('host'), port=int(config('port')), user=config('user'),
+                                     password=config("password"), database=config("database"), auth_plugin='mysql_native_password') as conexao:
+            with conexao.cursor() as cursor:
+                cursor.execute(f'''select pages.id as pagina_id, pages.url, plataformas_page.data_ultima_busca, 
+                                    usuarios_crawler_python.id_telegram, plataformas_page.qtd_registros
+                                from plataformas_page 
+                                inner join plataformas 
+                                inner join plataforma_page_usuarios
+                                inner join usuarios_crawler_python
+                                inner join pages
+                                on plataformas_page.id_plataforma = plataformas.id
+                                and pages.id = plataformas_page.id_page
+                                and plataformas_page.is_active = 1
+                                and plataforma_page_usuarios.id_usuario_crawler_python = usuarios_crawler_python.id 
+                                and usuarios_crawler_python.is_active = 1
+                                and plataforma_page_usuarios.is_active = 1
+                                and plataformas.descricao = '{plataforma}';''')
+
+                for r in cursor.fetchall():
+                    # r[1] é a url que esta sendo utilizada como chave
+                    if r[1] not in retorno_aux:
+                        retorno_aux[r[1]] = {
+                            'id_pagina': r[0],
+                            'ultima_data': r[2],
+                            'ids_usuario': [r[3].strip()],
+                            'qtd_registros': r[4]
+                        }
+                    else:
+                        if r[3].strip() not in retorno_aux[r[1]]['ids_usuario']:
+                            retorno_aux[r[1]]['ids_usuario'].append(r[3].strip())
+        return retorno_aux
+
+    except Exception as e:
+        print(f"Erro ao retornar_urls - {str(e)}")
+        logs.error(f"Erro ao retornar_urls - {str(e)}", exc_info=True )
+
 def retornar_dicionario_filtros(word):
     try:
         filtros_aux = {}
@@ -368,7 +407,7 @@ def gravar_processo_itens(cursor, itens, id_processo):
             )
             raise
       
-def gravar_novo_processo(editalnovo):
+def gravar_novo_processo(editalnovo, plataforma = None):
     link = editalnovo.get("Link", "").rstrip("/")
 
     print(f"Gravar novo processo (por link): {link or 'Link não encontrado'}")
@@ -417,7 +456,7 @@ def gravar_novo_processo(editalnovo):
 
             gravar_processo_pncp(cursor, editalnovo, id_processo)
 
-            if "itens_dados" in editalnovo and editalnovo["itens_dados"]:
+            if "itens_dados" in editalnovo and editalnovo["itens_dados"] and (plataforma is None or plataforma.lower() != "seguro"):
                 gravar_processo_itens(cursor, editalnovo["itens_dados"], id_processo)
 
             # Atualiza envio de notificação antes do commit

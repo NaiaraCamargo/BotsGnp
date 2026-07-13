@@ -1,21 +1,22 @@
 {
-    "token_telegram": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
-    "token_telegram_bool": "8828821807:AAHfxy3TjUe9ZURnSM_mOAinvkEqTSYeGOg",
-    "dias_limpar_logs": 10,
+    "token_telegram": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
+    "token_telegram_alterados": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
+    "token_telegram_reserva_ignorada":"6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
+    "dias_limpar_logs": 5,
     "caminho_bkp": "C:/BOTGNP/bkp",
-    "dias_intervalo_bkp": 2,
+    "dias_intervalo_bkp": 5,
     "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
     "conexao_banco": {
         "host": "localhost",
         "port": 3306,
         "user": "root",
         "password": "217799",
-        "database": "gnpobras"
+        "database": "gnpnew"
     },
-    "UNRAR_TOOL": "C:/BOTGNP/Bot Gnp New/Ferramentas/unrar.exe",
+    "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
     "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
-    "pasta_downloads": "C:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/OBRAS/",
-    "raiz_local": "C:/PROGRAMAS GNP",
+    "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/SEGURO/",
+    "raiz_local": "D:/PROGRAMAS GNP",
     "raiz_server": "//Killer",
     "extensoes_imgs": [
         ".jpeg",
@@ -52,19 +53,17 @@
         ".odt"
     ],
     "limite_kb": 10000,
-    "processar_todos_obra": false,
-    "processar_todos_pintura": false,
-    "processar_todos_reforma": false,
-    "processar_todos_projeto_arquitetonico": false,
-    "processar_todos_asbuilt": false,
-    "processar_todos_construcao": false,
-    "processar_todos_poco_artesiano": false,
     "processar_dia": true,
-
-    "email_planilha_botbool": {
-        "email_remetente": "naiarascamargo@gmail.com",
-        "senha_email": "vvfh nsta jrbn podf",
-        "smtp_host": "smtp.gmail.com",
-        "smtp_port": 587
+    "mafre":{
+        "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_pos_login": "https://negociospublicos.mapfre.com.br/consultaGeral.aspx",
+        "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=0000&p=consultaGeral.aspx",
+        "user": "BRASILGNP",
+        "password": "ype769#",
+        "palavras_arquivos_exececoes": [
+            "anexo",
+            "termo",
+            "relacao"
+        ]
     }
 }
