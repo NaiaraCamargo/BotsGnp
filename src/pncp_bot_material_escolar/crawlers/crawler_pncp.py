@@ -25,12 +25,14 @@ from pncp_shared.database.repositoriopncp import (
     atualizar_ultima_data,
     salvar_urls_com_erro_api
 )
-from pncp_bot_obra.services.processamento_edital import processar_texto
+from pncp_bot_material_escolar.services.processamento_edital import processar_texto
 from pncp_shared.utils.urls_pncp import gerar_urls_variantes_pncp
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
 lock_editais = Lock()
+
+retornoMsg = ""
             
 metadados = ControleMetadados()
 
@@ -59,7 +61,7 @@ def carregar_filtros(nome, valores='', filtros_base=None):
 
     return filtros_base
 
-def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):   
+def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
     id_pagina = notificacao_config['id_pagina']
     ids_usuarios = notificacao_config['ids_usuarios']
     plataforma = notificacao_config['plataforma']
@@ -137,15 +139,14 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     salvar_urls_com_erro_api(lista_erros_api, id_pagina=id_pagina, plataforma=plataforma)
             except Exception as e:
                 logs.error(f"Erro ao salvar lista_erros_api: {e}", exc_info=True)
-            finalizar_driver(driver, profile_dir, contexto="driver PNCP Obras")
+            finalizar_driver(driver, profile_dir, contexto="driver PNCP Material Escolar")
           
     except Exception as e_crawler:
         logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
         raise
 
 def processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, quantidade_para_processar, 
-                    pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, 
-                    termo_busca, id_plataforma, termo_original):
+                    pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, termo_busca, id_plataforma, termo_original):
     try:
         controles_iniciais(driver)
 
@@ -192,10 +193,10 @@ def processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, lis
         try:
             for texto in islice(novalistaElementos, quantidade_para_processar):
                 total_processados += 1
-                print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}")
+                print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}\n")
                 
                 edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
-                    processar_dia,filtros_base, lock_editais, editais_em_processamento, error_timeout, lista_erros_api, termo_busca)
+                    processar_dia,filtros_base, lock_editais, editais_em_processamento, error_timeout,lista_erros_api)
 
         except Exception as e:
             logs.error(f"Erro no processamento: {e}\n")    
@@ -240,8 +241,8 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
                                 filtros_base, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
                                 lista_erros_api, termo_busca, id_plataforma, termo_original):
     try:
-        print(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
-        logs.info(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
+        print(f"Total Processados {palavra_chave}: {termo_busca}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
+        logs.info(f"Total Processados {palavra_chave}: {termo_busca}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
             url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
@@ -268,7 +269,7 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
             atualizar_heuristica(id_pagina, total_itens_tmp)
         else:
             atualizar_heuristica_busca(id_pagina, id_plataforma, termo_busca or "sem_termo", total_itens_tmp)
-        carregar_configuracoes(plataforma)
+        carregar_configuracoes()
         try:
             if termo_busca == termo_original:
                 filtros["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina)
@@ -281,7 +282,3 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
     except Exception as e:
         logs.error(f"Erro no processamento processar_paginas_adicionais: {e}\n")
         return total_processados
-        
-
-
-

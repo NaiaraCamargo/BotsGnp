@@ -5,7 +5,7 @@ from time import sleep
 import unicodedata
 from datetime import datetime, timedelta
 from urllib.parse import unquote_plus
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.config.controle_config import configuracoes
  
 

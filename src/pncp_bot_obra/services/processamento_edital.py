@@ -6,7 +6,7 @@ from pncp_bot_obra.api.api_edital import (
     montar_novos_campos, 
     montar_itens_campos
 )
-from pncp_bot_obra.api.api_arquivos import (
+from pncp_shared.api.api_arquivos import (
     buscar_arquivos, 
     salvar_arquivos_api
 )
@@ -26,8 +26,8 @@ from pncp_shared.utils.validadores_pncp import (
     extrair_chaves_do_link,
     extrair_texto,
 )
-from pncp_shared.logs_pncp.controle_logs import logs
-from pncp_bot_obra.controllers.controle_envio_TG import enviar_mensagem
+from pncp_shared.logs.controle_logs import logs
+from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
 
 def obter_flags_envio(filtros_base, edital_existente=None):
     try:
@@ -257,10 +257,10 @@ def tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativa
             if isinstance(compra, dict):
                 return compra, qtd_items, itens, False
             
-            erro_foi_timeout = teve_timeout_get_json(lista_erros_api, indice_erros_antes)
+            erro_permite_nova_tentativa = deve_tentar_novamente_api(lista_erros_api, indice_erros_antes)
             
-            if not erro_foi_timeout:
-                print(f"[ERRO API] Não é TIMEOUT_GET_JSON. Não vai tentar novamente: {link}")
+            if not erro_permite_nova_tentativa:
+                print(f"[ERRO API] Erro não permite nova tentativa. Pulando edital: {link}")
                 return None, None, None, False
 
             print(f"[TIMEOUT_GET_JSON] Tentativa {tentativa}/{max_tentativas} para o edital: {link}")
@@ -293,17 +293,27 @@ def extrair_link(texto, urlBase):
         'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
     }
     
-def teve_timeout_get_json(lista_erros_api, indice_inicial):
+def deve_tentar_novamente_api(lista_erros_api, indice_inicial):
     try:
         if lista_erros_api is None:
             return False
 
         erros_novos = lista_erros_api[indice_inicial:]
 
+        tipos_retry = {
+            "TIMEOUT_GET_JSON",
+            "HTTP_ERROR_GET_JSON_429",
+            "HTTP_ERROR_GET_JSON_500",
+            "HTTP_ERROR_GET_JSON_502",
+            "HTTP_ERROR_GET_JSON_503",
+            "HTTP_ERROR_GET_JSON_504",
+        }
+
         return any(
-            erro.get("tipo_erro") == "TIMEOUT_GET_JSON"
+            erro.get("tipo_erro") in tipos_retry
             for erro in erros_novos
         )
+        
     except Exception as ex:
         logs.error(f"[ERRO AO VERIFICAR TIMEOUT_GET_JSON] {ex}")
         return False

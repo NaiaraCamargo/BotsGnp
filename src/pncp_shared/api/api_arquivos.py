@@ -16,7 +16,7 @@ from PyPDF2 import PdfReader, PdfWriter
 import os
 import pandas as pd
 
-from pncp_shared.logs_pncp.controle_logs import *
+from pncp_shared.logs.controle_logs import *
 from pncp_shared.utils.funcoespncp import *
 
 PNCP = "https://pncp.gov.br/api/pncp/v1"

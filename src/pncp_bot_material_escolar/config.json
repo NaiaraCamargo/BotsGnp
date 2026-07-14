@@ -1,0 +1,56 @@
+{
+    "token_telegram": "8576152292:AAH-hC-p8a0Rvnys18XSTntylqg1e3YvLEA",
+    "token_telegram_alterados": "6897682861:AAHl__Zb__STWUi3Uhr37vS07J-4JHo_ETY",
+    "dias_limpar_logs": 30,
+    "caminho_bkp": "C:/BOTGNP/bkp",
+    "dias_intervalo_bkp": 2,
+    "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 5.7/bin/mysqldump.exe",
+    "conexao_banco": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "217799",
+        "database": "gnpmaterialescolar"
+    },
+    "UNRAR_TOOL": "C:/FERRAMENTAS/UnRAR/unrar.exe",
+    "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
+    "pasta_downloads": "D:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/MATERIAL ESCOLAR/",
+    "raiz_local": "D:/PROGRAMAS GNP",
+    "raiz_server": "//Killer",
+    "extensoes_imgs": [
+        ".jpeg",
+        ".png",
+        ".jpg"
+    ],
+    "extensoes_planilhas": [
+        ".xlsm",
+        ".csv",
+        ".ods"
+    ],
+    "formatos_para_docx": [
+        ".docm",
+        ".doc",
+        ".dotx",
+        ".dotm",
+        ".dot",
+        ".xps",
+        ".rtf",
+        ".txt",
+        ".xml",
+        ".odt"
+    ],
+    "extensoes_validas": [
+        ".pdf",
+        ".zip",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".jpeg",
+        ".png",
+        ".rar",
+        ".odt"
+    ],
+    "limite_kb": 10000,
+    "processar_dia": true
+}

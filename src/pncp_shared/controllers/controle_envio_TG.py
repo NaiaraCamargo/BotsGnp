@@ -3,7 +3,7 @@ import requests
 import html
 import re
 
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 from pncp_shared.config.controle_config import configuracoes
 from pncp_shared.utils.funcoespncp import cnpj_formatado
 
@@ -14,7 +14,7 @@ def enviar_mensagem(msg, usuarios_notificar,  botGnp=False, botBool=False, erro 
         
         msg = formatar_mensagem(msg, erro)
 
-        token_enviar = configuracoes.get('token_telegram_obras', "")
+        token_enviar = configuracoes.get('token_telegram', "")
         
         usuarios_envio = usuarios_notificar.copy()
 
@@ -70,6 +70,10 @@ def formatar_mensagem(msg_dict, erro):
             nova_msg += "\n"
             nova_msg += "<b>POSSÍVEL ERRO NO SITE... EXTRAÇÃO DE MAIS DE 3 LINKS COM TIMEOUT. NÃO SERÁ MAIS PROCESSADO NENHUM EDITAL!</b>\n"
             nova_msg += "\n"
+            palavra_chave_timeout = msg_dict.get("palavra_chave_timeout")
+            if palavra_chave_timeout:
+                nova_msg += f"<b>PALAVRA-CHAVE:</b> <code>{html.escape(str(palavra_chave_timeout))}</code>\n"
+                nova_msg += "\n"
             nova_msg += "<b>AGUARDANDO 5 MINUTOS PARA NOVA TENTATIVA ... </b>\n"
             nova_msg += "\n"
             nova_msg += "<b>=============================================================================================</b>"
