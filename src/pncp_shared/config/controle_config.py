@@ -10,6 +10,9 @@ configuracoes = {
     "token_telegram": "",
     "token_telegram_alterados": "",
     "dias_limpar_logs": 30,
+    "caminho_bkp": "C:/BOTGNP/bkp",
+    "dias_intervalo_bkp": 2,
+    "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
     "conexao_banco": {
         "host": "",
         "port": 3306,
@@ -49,7 +52,8 @@ configuracoes = {
 PACOTES_CONFIG = {
     "obra": "pncp_bot_obra",
     "seguro": "pncp_bot_seguro",
-    "material_escolar": "pncp_bot_material_escolar",
+    "materialescolar": "pncp_bot_material_escolar",
+    "mapfre": "mapfre_downloader",
 }
 
 

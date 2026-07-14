@@ -199,29 +199,6 @@ def destacar_palavras(texto, palavras):
 
     return texto
 
-def termo_bate(texto_norm: str, termo_norm: str) -> bool:
-    # termo composto: exige todas as palavras presentes (qualquer ordem)
-    partes = termo_norm.split()
-    palavras_texto = set(texto_norm.split())
-    return all(p in palavras_texto for p in partes)
-
-def normalizar(txt: str) -> str:
-    if not txt:
-        return ""
-    txt = txt.lower()
-    txt = unicodedata.normalize("NFKD", txt)
-    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
-    txt = re.sub(r"[^a-z0-9\s]", " ", txt)   # tira pontuação
-    txt = re.sub(r"\s+", " ", txt).strip()   # normaliza espaços
-    return txt
-
-def codigos_unicos_do_edital(itens_dados: list[dict]) -> list[int]:
-    s = set()
-    for it in (itens_dados or []):
-        for c in (it.get("codigosCatalogo") or []):
-            s.add(c)
-    return sorted(s)
-
 def adicionar_erro_url(lista_erros_api, url, params=None, tipo_erro=None, mensagem=None, link_origem=None):
     if lista_erros_api is None:
         return

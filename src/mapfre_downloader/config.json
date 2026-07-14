@@ -1,0 +1,59 @@
+{
+    "caminho_excel": "D:/BOTS/RANKING.xlsx",
+    "aba_excel": "COM DADOS",
+    "mostrar_browser": false,
+    "tempo_de_login": 300,
+    "caminho_bkp": "C:/BOTGNP/bkp",
+    "dias_intervalo_bkp": 2,
+    "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
+    "UNRAR_TOOL": "C:/BOTGNP/Bot Gnp New/Ferramentas/unrar.exe",
+    "path_wkhtmltoimage": "C:/Program Files/wkhtmltopdf/bin/wkhtmltoimage.exe",
+    "pasta_downloads": "D:/BOTS",
+    "raiz_local": "C:/PROGRAMAS GNP",
+    "raiz_server": "//Killer",
+    "extensoes_imgs": [
+        ".jpeg",
+        ".png",
+        ".jpg"
+    ],
+    "extensoes_planilhas": [
+        ".xlsm",
+        ".csv",
+        ".ods"
+    ],
+    "formatos_para_docx": [
+        ".docm",
+        ".doc",
+        ".dotx",
+        ".dotm",
+        ".dot",
+        ".xps",
+        ".rtf",
+        ".txt",
+        ".xml",
+        ".odt"
+    ],
+    "extensoes_validas": [
+        ".pdf",
+        ".zip",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".jpeg",
+        ".png",
+        ".rar",
+        ".odt"
+    ],
+    "mafre":{
+        "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=0000&p=consultaGeral.aspx",
+        "user": "BRASILGNP",
+        "password": "ype769#",
+        "palavras_arquivos_exececoes": [
+            "anexo",
+            "termo",
+            "relacao"
+        ]
+    }
+}

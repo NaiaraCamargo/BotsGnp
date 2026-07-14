@@ -1,6 +1,7 @@
 import re
+import string
 from unidecode import unidecode
-from pncp_shared.logs_pncp.controle_logs import logs
+from pncp_shared.logs.controle_logs import logs
 
 def validar_modalidade_obras (texto):
     modalidade = extrair_texto(texto, 'Modalidade da Contratação: ')
@@ -81,3 +82,27 @@ def extrair_texto(texto, chave):
     except Exception as e:
         logs.error(f"Erro ao extrair texto para chave '{chave}': {e}", exc_info=True)
         return None
+    
+def validar_texto_seguro(texto, filtros_base):
+    pos_objeto = texto.lower().find("objeto:")
+    if pos_objeto == -1:
+        return [] 
+
+    texto_objeto = texto[pos_objeto + len("Objeto:"):].strip()
+    texto_normalizado = unidecode(texto_objeto.lower())
+
+    palavras_encontradas = []
+
+    for palavra_chave, palavras_bloqueadas in filtros_base['banco']['palavraschave'].items():
+        if palavra_chave not in texto_normalizado:
+            continue
+
+        # Bloqueia se encontrar uma palavra proibida
+        if any(re.search(rf'\b{re.escape(pb)}\b', texto_normalizado) for pb in palavras_bloqueadas):
+            continue
+
+        # Busca todas as palavras do texto original que começam com a palavra-chave
+        palavras = texto_objeto.split()
+        palavras_encontradas.extend([w.strip(string.punctuation) for w in palavras if unidecode(w.lower()).startswith(palavra_chave)])
+
+    return palavras_encontradas

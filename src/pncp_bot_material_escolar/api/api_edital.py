@@ -1,11 +1,146 @@
+import json
 import re
 import requests
-import json
 from pncp_shared.utils.funcoespncp import *
-from pncp_shared.logs.controle_logs import logs
+
 
 CONSULTA = "https://pncp.gov.br/api/consulta/v1"
 PNCP = "https://pncp.gov.br/pncp-api/v1"
+
+
+CATALOGO = {
+
+    1: [
+        "nota adesiva", "notas adesivas",
+        "post it", "postit",
+        "bloco adesivo",
+        "marcador adesivo",
+        "folha adesiva"
+    ],
+
+    2: [
+        "grampeador", "grampeadores",
+        "grampo 26 6", "grampo 26/6", "grampo 26-6"
+    ],
+
+    3: [
+        "perfurador", "perfuradores"
+    ],
+
+    4: [
+        "corretivo",
+        "caneta corretiva",
+        "caneta corretivo",
+        "liquid paper",
+        "corretivo liquido",
+        "corretivo branquinho"
+    ],
+
+    5: [
+        "fita corretiva",
+        "corretivo em fita",
+        "fita para correcao",
+        "corretivo roller",
+        "corretivo seco"
+    ],
+
+    6: [
+        "cola bastao",
+        "tubo bastao",
+        "cola isopor",
+        "cola eva",
+        "cola artesanato",
+        "cola branca",
+        "cola liquida",
+        "cola lavavel",
+        "cola atoxica",
+        "cola polivinil acetato",
+        "cola pva"
+    ],
+
+    7: [
+        "pasta cartao",
+        "cartao duplex",
+        "pasta grampo trilho",
+        "pasta oficio",
+        "pasta aba elastico"
+    ],
+
+    8: [
+        "clipes",
+        "clip",
+        "prendedor de papel"
+    ],
+
+    9: [
+        "pasta suspensa",
+        "pasta com haste",
+        "pasta de haste",
+        "pasta kraft",
+        "pasta marmorizada"
+    ],
+
+    10: [
+        "arquivo morto",
+        "caixa box"
+    ],
+
+    11: [
+        "registradores",
+        "registradora",
+        "pasta az",
+        "registradora az",
+        "az usual",
+        "pasta lombo largo",
+        "registrador lombo largo",
+        "pasta lombo estreito",
+        "registrador lombo estreito",
+        "pasta memorando",
+        "registrador memorando",
+        "pasta duplicata",
+        "registrador duplicata"
+    ],
+
+    12: [
+        "bobina calculadora"
+    ],
+
+    13: [
+        "bobina pdv",
+        "bobina termica",
+        "bobina pos",
+        "bobina ecf",
+        "bobina maquininha de cartao",
+        "bobina cupom",
+        "bobina cupom fiscal",
+        "bobina rep",
+        "bobina balanca"
+    ],
+
+    14: [
+        "bobina relogio",
+        "bobina de ponto"
+    ],
+
+    15: [
+        "papel a4",
+        "papel sulfite",
+        "folha a4",
+        "folha sulfite"
+    ],
+
+    16: [
+        "papel a3",
+        "folha a3"
+    ],
+
+    17: [
+        "fita ribbon",
+        "fita termica",
+        "fita transferencia",
+        "fita ttr"
+    ]
+}
 
 def get_json(url, params=None, timeout=60, lista_erros_api=None, link_origem=None):
     try:
@@ -73,6 +208,7 @@ def get_json(url, params=None, timeout=60, lista_erros_api=None, link_origem=Non
         return None
 
 
+
 def get_int(url, params=None, timeout=30) -> int:
     r = requests.get(url, params=params, timeout=timeout)
     r.raise_for_status()
@@ -86,28 +222,25 @@ def get_int(url, params=None, timeout=30) -> int:
                     return j[k]
         raise ValueError(f"Resposta inesperada: {j}")
     except ValueError as e:
-        try:
-            return int(r.text.strip())
-        except Exception as e_text:
-            logs.error(f"[ERRO PARSE TEXT GET INT] {e_text} - URL: {url}")
-            return 0
+        logs.error(f"[ERRO ValueError GET INT] {e} - URL: {url}")
+        return int(r.text.strip())
 
-def buscar_compra_e_itens(cnpj: str, ano: int, sequencial: int, link, timeout=30, lista_erros_api=None):
+def buscar_compra_e_itens(cnpj: str, ano: int, sequencial: int, link, timeout=30,lista_erros_api=None):
     try:
         compra_url = f"{CONSULTA}/orgaos/{cnpj}/compras/{ano}/{sequencial}"
         compra = get_json(compra_url, timeout=timeout, lista_erros_api=lista_erros_api, link_origem=link)
-
+        
         if not isinstance(compra, dict):
             return None, 0, []
 
         qtd_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens/quantidade"
         qtd = get_int(qtd_url, timeout=timeout)
-
+        
         if not isinstance(qtd, int) or qtd <= 0:
             return compra, 0, []
 
         itens_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens"
-        itens_resp = get_json(itens_url, params={"pagina": 1, "tamanhoPagina": qtd}, timeout=timeout, lista_erros_api=lista_erros_api, link_origem=link)
+        itens_resp = get_json(itens_url, params={"pagina": 1, "tamanhoPagina": qtd}, timeout=timeout)
 
         if isinstance(itens_resp, dict):
             itens = itens_resp.get("data") or []
@@ -121,6 +254,7 @@ def buscar_compra_e_itens(cnpj: str, ano: int, sequencial: int, link, timeout=30
     except Exception as e:
         logs.error(f"[ERRO AO BUSCAR CAMPOS API] {link} - {e}", exc_info=True)
         return None, 0, []
+
 
 def montar_novos_campos(compra: dict, qtd, link, palavras_destacadas):
     try:
@@ -171,12 +305,16 @@ def montar_itens_campos(link: str, itens: list[dict]) -> list[dict]:
             valor_unit = item.get("valorUnitarioEstimado") or item.get("valorUnitario")
             valor_total = item.get("valorTotalEstimado") or item.get("valorTotal")
             
+            codigos = codigos_para_descricao(descricao)
+            
             campos_itens.append({
                 "numeroItem": numero,
                 "descricaoItem": descricao,
                 "quantidadeItem": quantidade,
                 "valorUnitItem": valor_unit,
                 "valorTotalItem": valor_total,
+                "codigosCatalogo": codigos,
+                "itemValidoCatalogo": bool(codigos)
             })
 
         return campos_itens
@@ -214,6 +352,20 @@ def normalizar(txt: str) -> str:
     txt = re.sub(r"[^a-z0-9\s]", " ", txt)   # tira pontuação
     txt = re.sub(r"\s+", " ", txt).strip()   # normaliza espaços
     return txt
+
+def codigos_para_descricao(descricao: str) -> list[int]:
+    t = normalizar(descricao)
+    if not t:
+        return []
+
+    encontrados = set()
+    for codigo, termos in CATALOGO.items():
+        for termo in termos:
+            termo_norm = normalizar(termo)
+            if termo_bate(t, termo_norm):
+                encontrados.add(codigo)
+                break  # não repete dentro do mesmo código
+    return sorted(encontrados)
 
 def codigos_unicos_do_edital(itens_dados: list[dict]) -> list[int]:
     s = set()
