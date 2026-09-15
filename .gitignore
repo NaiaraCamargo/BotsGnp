@@ -28,12 +28,21 @@ planilhas/
 
 # Documentação gerada automaticamente (se aplicável)
 docs/
+!docs/
+docs/*
+!docs/migracao_bots_gnp_bool_edit.sql
+!docs/migracao_canais_e_historico_bots.sql
+!docs/completar_migracao_canais_parcial.sql
+!docs/ativar_bot_edit.sql
 
 # Arquivos Excel na raiz
 *.xlsx
 
 #spec 
 *.spec
+!bot_pncp_obra.spec
+!bot_pncp_obra_bool.spec
+!bot_pncp_obra_edit.spec
 
 #pasta browser
 pncp_shared/resources/browser/*

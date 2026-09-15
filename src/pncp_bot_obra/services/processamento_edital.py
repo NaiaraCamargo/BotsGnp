@@ -2,56 +2,39 @@ from datetime import datetime
 import time
 
 from pncp_bot_obra.api.api_edital import (
-    buscar_compra_e_itens,
     montar_novos_campos, 
     montar_itens_campos
 )
+from pncp_shared.api.compras_pncp import tentar_buscar_compra
 from pncp_shared.api.api_arquivos import (
     buscar_arquivos, 
     salvar_arquivos_api
 )
-from pncp_shared.utils.funcoespncp import (
-    converter_moeda_brl_para_float, 
-    obter_pastas_download
-)
+from pncp_shared.utils.funcoespncp import obter_pastas_download
 from pncp_shared.database.repositoriopncp import (
     gravar_processo_botbool_envio, 
     verificar_existencia_edital_new, 
     gravar_novo_processo, 
-    atualizar_termos_edital
+    atualizar_termos_edital,
+    bloquear_processamento_edital,
+    retornar_destinos_enviados,
+    retornar_destinos_processados,
+    registrar_resultado_envio_bot,
 )
 from pncp_shared.utils.validadores_pncp import (
     validar_modalidade_obras,
     validar_palavras,
+    validar_perfil_valid,
     extrair_chaves_do_link,
     extrair_texto,
 )
 from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
-
-def obter_flags_envio(filtros_base, edital_existente=None):
-    try:
-        filter_atual = filtros_base.get("banco", {}).get("filter")
-        filter_existente = edital_existente.get("filter") if edital_existente else None
-
-        mapa_filters = {
-            "ALL": {"ALL", "GNP", "BOOL"},
-            "GNP": {"GNP"},
-            "BOOL": {"BOOL"}
-        }
-
-        filtros_atuais = mapa_filters.get(filter_atual, set())
-        filtros_existentes = mapa_filters.get(filter_existente, set())
-
-        filtros_para_enviar = filtros_atuais - filtros_existentes
-
-        return {
-            "all": "ALL" in filtros_para_enviar,
-            "gnp": "GNP" in filtros_para_enviar,
-            "bool": "BOOL" in filtros_para_enviar
-        }
-    except Exception as e:
-        logs.error(f"[ERRO AO OBTER FLAGS DE ENVIO] {e}")
+from pncp_bot_obra.services.roteamento_bots import (
+    calcular_destinos_aprovados,
+    destinatarios_por_destino,
+    normalizar_destinos,
+)
 
 def termo_ja_existe(termos_existentes, termo_busca):
     if not termo_busca:
@@ -81,36 +64,45 @@ def atualizar_termo_existente(edital_existente, termo_busca):
     atualizar_termos_edital(edital_existente["id"], novos_termos)
 
 
-def definir_envio_bots(edital, flags_envio):
-    bot_gnp = False
-    bot_bool = False
+def enviar_para_destinos(edital, id_processo, destinos, destinatarios):
+    chats_ja_enviados = set()
+    destinos_enviados = set()
 
-    uf = str(edital.get("Uf", "")).upper()
-    valor_total = str(edital.get("ValorTotalEstimadoCompra", "")).strip().upper()
+    for destino in sorted(destinos):
+        chats_destino = destinatarios_por_destino(destinatarios, destino)
+        chats_novos = [chat for chat in chats_destino if chat not in chats_ja_enviados]
 
-    valor_estimado = (
-        0
-        if valor_total == "SIGILOSO"
-        else converter_moeda_brl_para_float(valor_total)
-    )
+        if 'EDIT' in destino and edital["Uf"].upper() != "RS" and edital["Uf"].upper() != "SC":
+            print(f"[IGNORADO - DESTINO EDIT DIFERENTE DE RS/SC] {destino} - {edital.get('Link')}")
+            registrar_resultado_envio_bot(id_processo, destino, "ignorado", "Destino EDIT diferente de RS/SC ignorado")
+            continue
 
-    if uf in ["RS", "SC"] and (flags_envio["all"] or flags_envio["gnp"]):
-        bot_gnp = True
+        enviados_agora = enviar_mensagem(edital, chats_novos, destino=destino) if chats_novos else []
 
-    if valor_estimado > 500000 or (
-        valor_total == "SIGILOSO" and (flags_envio["all"] or flags_envio["bool"])
-    ):
-        bot_bool = True
+        chats_ja_enviados.update(str(chat) for chat in enviados_agora)
+        destino_entregue = bool(set(chats_destino) & chats_ja_enviados)
 
-    return bot_gnp, bot_bool
+        registrar_resultado_envio_bot(id_processo, destino, "enviado" if destino_entregue else "erro",
+                                      "" if destino_entregue else "Nenhum destinatario do destino recebeu a mensagem")
+
+        if destino_entregue:
+            destinos_enviados.add(destino)
+
+    return destinos_enviados
 
 def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtros_base, lock_editais, 
                     editais_em_processamento, error_timeout, lista_erros_api=None, termo_busca=None):
-    
+
     if plataforma.startswith("obra") and not validar_modalidade_obras(texto):
         return None, error_timeout
-    
+
     palavras_destacadas = validar_palavras(texto=texto, filtros_base=filtros_base)
+    destinos_pagina = normalizar_destinos(filtros_base.get("banco", {}).get("destinos"))
+    destinatarios = filtros_base.get("banco", {}).get("destinatarios", [])
+
+    if not destinos_pagina:
+        logs.error("[PAGINA SEM DESTINO] id_page=%s termo=%s", id_pagina, termo_busca)
+        return None, error_timeout
 
     edital = extrair_link(texto, urlBase)
     link = edital.get("Link", "").strip()
@@ -122,12 +114,8 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
         editais_em_processamento.add(link)
 
     try:
-        #if processar_dia and 5 <= hora_atual < 9:
-            #if datetime.strptime(edital["Data"], "%d/%m/%Y").date() != datetime.today().date():
-                #return None, error_timeout
-
         palavras_limpa = [p.strip("'\"") for p in palavras_destacadas if p.strip("'\"")]
-        
+
         edital.update({
             "palavras_chave": palavras_limpa if palavras_limpa else "",
             "termo_busca": termo_busca,
@@ -135,54 +123,40 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
             "notificar_retorno": True,
             "envio_notificacao": datetime.now()
         })
-        
-        flags_envio = {
-            "all": False,
-            "gnp": False,
-            "bool": False
-        }
 
-        edital_existente = verificar_existencia_edital_new(link)
-        
-        if edital_existente:
-            termos_existentes = edital_existente.get("termos", "")
-
-            if termo_ja_existe(termos_existentes, termo_busca):
-                print(f"EDITAL COM TERMO JÁ EXISTE NO BANCO: {link}")
-                logs.info(
-                    f"Edital com termo já existe no banco: "
-                    f"{edital_existente.get('id')} - {edital.get('Link')} - {termo_busca}"
-                )
+        with bloquear_processamento_edital(link) as lock_adquirido:
+            if not lock_adquirido:
+                logs.info(f"[IGNORADO - LOCK DE OUTRO EXECUTOR] {link}")
                 return None, error_timeout
 
-            atualizar_termo_existente(edital_existente, termo_busca)
-        
-        flags_envio = obter_flags_envio(filtros_base, edital_existente)
-                
-        edital, error_timeout = processar_edital(
-            edital=edital,
-            ids_usuarios=ids_usuarios,
-            error_timeout=error_timeout,
-            palavras_destacadas=palavras_destacadas,
-            filtros_base=filtros_base,
-            plataforma=plataforma,
-            lista_erros_api=lista_erros_api,
-            flags_envio=flags_envio
-        )
+            edital_existente = verificar_existencia_edital_new(link)
+
+            if edital_existente:
+                termos_existentes = edital_existente.get("termos", "")
+
+                if termo_ja_existe(termos_existentes, termo_busca):
+                    destinos_processados = retornar_destinos_processados(edital_existente.get("id"))
+                    if destinos_pagina.issubset(destinos_processados):
+                        print(f"EDITAL COM TERMO JA PROCESSADO: {link}")
+                        logs.info("Edital com termo ja processado: %s - %s - %s", edital_existente.get("id"), link, termo_busca)
+                        return None, error_timeout
+                else:
+                    atualizar_termo_existente(edital_existente, termo_busca)
+
+            edital, error_timeout = processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base,
+                                                     plataforma, lista_erros_api, destinos_pagina, destinatarios)
 
         return edital, error_timeout
     except Exception as e:
-        logs.error(f"[ERRO AO PROCESSAR TEXTO] {link} - {e}")
+        logs.error(f"[ERRO AO PROCESSAR TEXTO] {link} - {e}", exc_info=True)
     finally:
         with lock_editais:
             editais_em_processamento.discard(link)
 
     return None, error_timeout
 
-def processar_edital(
-    edital, ids_usuarios, error_timeout, palavras_destacadas,
-    filtros_base, plataforma, lista_erros_api, flags_envio
-):
+
+def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base, plataforma, lista_erros_api,destinos_pagina, destinatarios,):
     try:    
         link = edital["Link"]
         chaves = extrair_chaves_do_link(link)
@@ -194,11 +168,11 @@ def processar_edital(
 
         cnpj, ano, numero = chaves
         
-        compra, qtd_items, itens, falhou_por_timeout  = tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
+        compra, qtd_items, itens, falhou_por_timeout = tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
         if compra is None:
             if falhou_por_timeout:
-                return tratar_timeout(edital, error_timeout, ids_usuarios)
+                return tratar_timeout(edital, error_timeout, destinos_pagina, destinatarios, tentativas=3)
             
             return None, error_timeout
 
@@ -210,12 +184,16 @@ def processar_edital(
         edital["itens_dados"] = itens_dados
         
         palavra_chave_item = validar_palavras(itens=itens_dados, filtros_base=filtros_base)
-        
-        #if not palavras_destacadas and not palavra_chave_item:
-           # print(" NENHUMA PALAVRA CHAVE ENCONTRADA NO OBJETO E NOS ITENS\n")
-            #return None, error_timeout
+        edit_valido = validar_perfil_valid(texto=compra.get("objetoCompra", ""), itens=itens_dados, filtros_base=filtros_base)
+        codigo_executor = str(filtros_base.get("banco", {}).get("codigo_executor") or "").strip().upper()
+
+        if codigo_executor == "EDIT" and not palavras_destacadas and not palavra_chave_item and not edit_valido:
+            print(" NENHUMA PALAVRA CHAVE ENCONTRADA NO OBJETO E NOS ITENS\n")
+            return None, error_timeout
 
         edital.update(novos_dados)
+
+        destinos_aprovados = calcular_destinos_aprovados(edital, destinos_pagina, edit_valido=edit_valido)
         
         pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
         edital["pasta_download"] = pasta_killer
@@ -224,11 +202,6 @@ def processar_edital(
         edital_print = {k: v for k, v in edital.items() if k != "itens_dados" and  k != "itens_validos"}
         print(f"\nProcessando: {edital_print}\n")   
  
-        bot_gnp, bot_bool = definir_envio_bots(edital, flags_envio)
-        
-        if bot_gnp or bot_bool:
-            enviar_mensagem(edital, ids_usuarios, bot_gnp, bot_bool)
-            
         arquivos = buscar_arquivos(cnpj, ano, numero, link)
         if not arquivos:
             logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
@@ -236,8 +209,20 @@ def processar_edital(
             salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
         
         id_processo = gravar_novo_processo(edital)
-        
-        if bot_bool and id_processo:
+
+        if not id_processo:
+            logs.error(f"[PROCESSO SEM ID] Nao foi possivel registrar os envios: {link}")
+            return edital, 0
+
+        destinos_ja_enviados = retornar_destinos_enviados(id_processo)
+        destinos_pendentes = destinos_aprovados - destinos_ja_enviados
+
+        for destino in destinos_pagina - destinos_aprovados - destinos_ja_enviados:
+            registrar_resultado_envio_bot(id_processo, destino, "ignorado")
+
+        destinos_enviados = enviar_para_destinos(edital, id_processo, destinos_pendentes, destinatarios)
+
+        if "BOOL" in destinos_enviados:
             gravar_processo_botbool_envio(id_processo)
         
         return edital, 0
@@ -246,42 +231,23 @@ def processar_edital(
         logs.error(f"[ERRO ao processar Edital:] {edital.get('Link', '').strip()} - {e}", exc_info=True)
         return None, error_timeout
     
-def tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3):   
-    try:
-        for tentativa in range(1, max_tentativas + 1):
-            
-            indice_erros_antes = len(lista_erros_api) if lista_erros_api is not None else 0
-            
-            compra, qtd_items, itens = buscar_compra_e_itens(cnpj, ano, numero, link, lista_erros_api=lista_erros_api)
-
-            if isinstance(compra, dict):
-                return compra, qtd_items, itens, False
-            
-            erro_permite_nova_tentativa = deve_tentar_novamente_api(lista_erros_api, indice_erros_antes)
-            
-            if not erro_permite_nova_tentativa:
-                print(f"[ERRO API] Erro não permite nova tentativa. Pulando edital: {link}")
-                return None, None, None, False
-
-            print(f"[TIMEOUT_GET_JSON] Tentativa {tentativa}/{max_tentativas} para o edital: {link}")
-
-            if tentativa < max_tentativas:
-                time.sleep(2)
-
-        return None, None, None, True
-    except Exception as ex:
-        logs.error(f"[ERRO AO TENTAR BUSCAR COMPRA] {link} - {ex}", exc_info=True)
-        return None, None, None, False
-  
-def tratar_timeout(edital, error_timeout, ids_usuarios):
+def tratar_timeout(edital, error_timeout, destinos, destinatarios, tentativas=3):
     """Gerencia erros de timeout e decide se continua ou pausa processamento."""
-   
+
+    link = str(edital.get("Link") or "").strip()
+    edital_alerta = dict(edital)
+    edital_alerta.update({"tentativas_timeout": tentativas, "tempo_espera_minutos": 3})
+
     print("\n" + "="*94)
-    print("ERRO NO SITE: MAIS DE 3 TIMEOUTS. AGUARDANDO 5 MINUTOS PARA TENTAR NOVAMENTE.")
+    print(f"ERRO NO SITE: LINK {link} FALHOU {tentativas} VEZES. AGUARDANDO 3 MINUTOS PARA NOVA TENTATIVA.")
     print("\n" + "="*94 + "\n")
-    enviar_mensagem(edital, ids_usuarios, erro=True)
-    
-    time.sleep(300)
+
+    for destino in sorted(normalizar_destinos(destinos)):
+        chats_destino = destinatarios_por_destino(destinatarios, destino)
+        if chats_destino:
+            enviar_mensagem(edital_alerta, chats_destino, erro=True, destino=destino)
+
+    time.sleep(180)
     
     return None, 0  
 
@@ -293,28 +259,3 @@ def extrair_link(texto, urlBase):
         'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
     }
     
-def deve_tentar_novamente_api(lista_erros_api, indice_inicial):
-    try:
-        if lista_erros_api is None:
-            return False
-
-        erros_novos = lista_erros_api[indice_inicial:]
-
-        tipos_retry = {
-            "TIMEOUT_GET_JSON",
-            "HTTP_ERROR_GET_JSON_429",
-            "HTTP_ERROR_GET_JSON_500",
-            "HTTP_ERROR_GET_JSON_502",
-            "HTTP_ERROR_GET_JSON_503",
-            "HTTP_ERROR_GET_JSON_504",
-        }
-
-        return any(
-            erro.get("tipo_erro") in tipos_retry
-            for erro in erros_novos
-        )
-        
-    except Exception as ex:
-        logs.error(f"[ERRO AO VERIFICAR TIMEOUT_GET_JSON] {ex}")
-        return False
-  

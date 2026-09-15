@@ -72,7 +72,9 @@ CLIENTE/
 │           └── chromedriver-win64/
 │               └── chromedriver.exe
 ├── obra/
-│   ├── bot_pncp_obra.exe
+│   ├── bot_pncp_obra_gnp.exe
+│   ├── bot_pncp_obra_bool.exe
+│   ├── bot_pncp_obra_edit.exe
 │   └── config.json
 ├── material_escolar/
 │   ├── bot_pncp_material_escolar.exe
@@ -104,22 +106,48 @@ Se o Chrome portátil não for encontrado, o bot tenta usar o Chrome instalado n
 
 Ative o ambiente virtual e execute os comandos na raiz do projeto. Os arquivos serão gerados em `dist/`.
 
-### PNCP Obras
+### PNCP Obras (GNP, BOOL e EDIT)
+
+Os tres executaveis usam o mesmo crawler, os mesmos services e o mesmo
+`config.json`. Os arquivos em `bots/` sao apenas pontos de entrada que informam
+qual executor deve consumir a fila. Portanto, a regra de processamento nao fica
+duplicada.
 
 ```powershell
-py -m PyInstaller src/pncp_bot_obra/bots/bot_pncp_obra.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options --hidden-import pncp_shared.database.backup_bancos --add-data "src/pncp_shared/metadata/metadados.db;pncp_shared/metadata"
+py -m PyInstaller bot_pncp_obra.spec --clean
+py -m PyInstaller bot_pncp_obra_bool.spec --clean
+py -m PyInstaller bot_pncp_obra_edit.spec --clean
 ```
+
+Sao gerados:
+
+```text
+dist/bot_pncp_obra_gnp.exe
+dist/bot_pncp_obra_bool.exe
+dist/bot_pncp_obra_edit.exe
+```
+
+Antes de iniciar os tres executaveis, aplique no banco, nesta ordem:
+
+```text
+docs/migracao_bots_gnp_bool_edit.sql
+docs/migracao_canais_e_historico_bots.sql
+```
+
+Depois classifique os canais em `usuarios_crawler_python.id_bot_destino`.
+Ative as paginas exclusivas do EDIT somente no final com
+`docs/ativar_bot_edit.sql`.
 
 ### PNCP Material Escolar
 
 ```powershell
-py -m PyInstaller src/pncp_bot_material_escolar/bots/bot_pncp_material_escolar.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options --hidden-import pncp_shared.database.backup_bancos --add-data "src/pncp_shared/metadata/metadados.db;pncp_shared/metadata"
+py -m PyInstaller src/pncp_bot_material_escolar/bots/bot_pncp_material_escolar.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options --hidden-import pncp_shared.database.backup_bancos
 ```
 
 ### PNCP Seguro
 
 ```powershell
-py -m PyInstaller src/pncp_bot_seguro/bots/bot_pncp_seguro.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options --hidden-import pncp_shared.database.backup_bancos --add-data "src/pncp_shared/metadata/metadados.db;pncp_shared/metadata"
+py -m PyInstaller src/pncp_bot_seguro/bots/bot_pncp_seguro.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options --hidden-import pncp_shared.database.backup_bancos
 ```
 
 ### Mapfre
@@ -131,7 +159,7 @@ py -m PyInstaller src/mapfre_downloader/bots/bot_mapfre.py --onefile --paths src
 ### Gerador de planilha
 
 ```powershell
-py -m PyInstaller src/pncp_planilha_desktop/gerar_planilha.py --onefile --noconsole --paths src --add-data "src/pncp_planilha_desktop/gerar_planilha.html;pncp_planilha_desktop" --add-data "src/pncp_bot_obra/config.json;pncp_bot_obra" --add-data "src/pncp_shared/metadata/metadados.db;pncp_shared/metadata"
+py -m PyInstaller src/pncp_planilha_desktop/gerar_planilha.py --onefile --noconsole --paths src --add-data "src/pncp_planilha_desktop/gerar_planilha.html;pncp_planilha_desktop" --add-data "src/pncp_bot_obra/config.json;pncp_bot_obra"
 ```
 
 Esse comando gera `dist/gerar_planilha.exe` e incorpora a interface `gerar_planilha.html`.

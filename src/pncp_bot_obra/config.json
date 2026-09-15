@@ -1,10 +1,10 @@
 {
     "token_telegram": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
-    "token_telegram_bool": "8828821807:AAHfxy3TjUe9ZURnSM_mOAinvkEqTSYeGOg",
+    "token_telegram_edit": "8834252614:AAFQzGQ0fBP7VBgftDDLmM7BRQmKZ4R1EE4",
     "dias_limpar_logs": 10,
     "caminho_bkp": "C:/BOTGNP/bkp",
     "dias_intervalo_bkp": 2,
-    "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
+    "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 5.7/bin/mysqldump.exe",
     "conexao_banco": {
         "host": "localhost",
         "port": 3306,

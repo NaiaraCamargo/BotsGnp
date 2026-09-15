@@ -14,12 +14,18 @@ from pncp_bot_obra.controllers.controle_planilha_bool import (
     gerar_excel_botbool_dia_anterior,
     enviar_email_com_planilha,
 )
+from pncp_bot_obra.database.repositorio_relatorio_botbool import (
+    retornar_emails_planilha_botbool, retornar_processos_botbool_periodo,
+)
 
 from pncp_shared.database.repositoriopncp import *
 from pncp_shared.database.backup_bancos import executar_backup_se_necessario
 from pncp_shared.utils.funcoespncp import *
+from pncp_shared.utils.asyncio_utils import executar_com_timeout_suave
 from pncp_shared.logs.controle_logs import *
 from pncp_shared.config.controle_config import *
+from pncp_bot_obra.database.repositorio_filtros_obras import retornar_dicionario_filtros_obras
+from pncp_bot_obra.services.roteamento_bots import normalizar_codigo_bot
 
 _backup_lock = threading.Lock()
 
@@ -32,10 +38,7 @@ def iniciar_backup_banco_periodico(plataforma):
         with _backup_lock:
             try:
                 dias_intervalo = int(configuracoes.get("dias_intervalo_bkp", 2))
-                resultado = executar_backup_se_necessario(
-                    plataforma=plataforma,
-                    dias_intervalo=dias_intervalo,
-                )
+                resultado = executar_backup_se_necessario(plataforma=plataforma, dias_intervalo=dias_intervalo)
                 if resultado.status == "ok":
                     logs.info(resultado.mensagem)
                     print(resultado.mensagem)
@@ -56,18 +59,28 @@ def iniciar_agendador_planilha():
 
 def rotina_envio_planilha_botbool_7h():
     try:
-        ontem = (datetime.now() - timedelta(days=1)).date()
-        
-        processos = retornar_processos_botbool_ontem()
-        
-        if not processos:
-            logs.info("Nenhum processo BotBool do dia anterior para enviar por e-mail.")
+        hoje = datetime.now().date()
+
+        if hoje.weekday() == 6:
+            logs.info("Envio da planilha BotBool ignorado aos domingos.")
             return
 
-        caminho, total = gerar_excel_botbool_dia_anterior(processos)
+        # Na segunda-feira, consolida sábado e domingo, pois não há envio no domingo.
+        dias_periodo = 2 if hoje.weekday() == 0 else 1
+        data_inicial = hoje - timedelta(days=dias_periodo)
+        data_final = hoje - timedelta(days=1)
+
+        processos = retornar_processos_botbool_periodo(data_inicial, hoje)
+        
+        if not processos:
+            logs.info("Nenhum processo BotBool do período de "
+                      f"{data_inicial.strftime('%d/%m/%Y')} a {data_final.strftime('%d/%m/%Y')} para enviar por e-mail.")
+            return
+
+        caminho, total = gerar_excel_botbool_dia_anterior(processos,data_inicial=data_inicial,data_final=data_final)
 
         if not caminho or total == 0:
-            logs.info("Nenhum edital BotBool do dia anterior para enviar por e-mail.")
+            logs.info("Nenhum edital BotBool do período para enviar por e-mail.")
             return
 
         emails_destino = retornar_emails_planilha_botbool()
@@ -78,29 +91,25 @@ def rotina_envio_planilha_botbool_7h():
 
         config_email = configuracoes["email_planilha_botbool"]
 
-        assunto = f"Relatório Licitações de OBRAS - {ontem.strftime('%d/%m/%Y')} - GNP CONSULTORIA"
+        periodo = data_inicial.strftime("%d/%m/%Y")
+        if data_final != data_inicial:
+            periodo += f" a {data_final.strftime('%d/%m/%Y')}"
+
+        assunto = f"Relatório Licitações de OBRAS - {periodo} - GNP CONSULTORIA"
 
         corpo = f"""Bom dia,
 
-    Segue em anexo a planilha com os editais BotBool do dia anterior.
+    Segue em anexo a planilha com os editais BotBool do período informado.
 
-    Data de referência: {ontem.strftime('%d/%m/%Y')}
+    Período de referência: {periodo}
     Quantidade de editais: {total}
 
     Atenciosamente,
     Bot PNCP
     """
 
-        enviado = enviar_email_com_planilha(
-            caminho_arquivo=caminho,
-            emails_destino=emails_destino,
-            assunto=assunto,
-            corpo=corpo,
-            email_remetente=config_email["email_remetente"],
-            senha_email=config_email["senha_email"],
-            smtp_host=config_email.get("smtp_host", "smtp.gmail.com"),
-            smtp_port=int(config_email.get("smtp_port", 587))
-        )
+        enviado = enviar_email_com_planilha(caminho, emails_destino, assunto, corpo, config_email["email_remetente"],
+                                            config_email["senha_email"], config_email.get("smtp_host", "smtp.gmail.com"), int(config_email.get("smtp_port", 587)))
 
         if enviado:
             logs.info(f"Planilha BotBool enviada com sucesso: {caminho}")
@@ -128,7 +137,7 @@ def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict, most
             
     filtros_locais = {
         'banco': {
-            'palavraschave': retornar_dicionario_filtros(palavra_chave),
+            'palavraschave': retornar_dicionario_filtros_obras(palavra_chave, manter_word=True),
             'ultima_data': formatar_data(dados_url.get('ultima_data', ''), padrao=format_data)
         }
     }
@@ -137,7 +146,10 @@ def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict, most
         "data_inicial": data_inicial or filtros_locais['banco']["ultima_data"],
         "data_final": data_final or formatar_data(limpar=False, padrao=format_data),
         "qtd_registros": dados_url.get("qtd_registros", 0),
-        "filter": dados_url.get("filter", "")
+        "filter": dados_url.get("filter", ""),
+        "codigo_executor": dados_url.get("codigo_executor"),
+        "destinos": dados_url.get("destinos", []),
+        "destinatarios": dados_url.get("destinatarios", []),
     })
 
     notificacao_config = {
@@ -159,55 +171,44 @@ async def executar_job_async(job: dict, plataforma: str, filtros: dict, mostrar_
         "ids_usuario": job.get("ids_usuario", []),
         "qtd_registros": job.get("qtd_registros", 0),
         "filter": job.get("filter", ""),
+        "codigo_executor": job.get("codigo_executor"),
+        "destinos": job.get("destinos", []),
+        "destinatarios": job.get("destinatarios", []),
     }
 
     # roda função bloqueante num thread do asyncio
-    await asyncio.to_thread(
-        executar_url,
-        job["url"],
-        dados_url,
-        plataforma,
-        filtros,
-        mostrar_browser,
-        data_inicial,
-        data_final,
-        format_data
-    )
+    await asyncio.to_thread(executar_url, job["url"], dados_url, plataforma, filtros, mostrar_browser,
+                            data_inicial, data_final, format_data)
 
-async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
-                    data_final: str = "", format_data: str = "universal", min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 180,
+async def bot_async(plataforma: str, codigo_executor: str = "GNP", filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
+                    data_final: str = "", format_data: str = "universal", min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 5,
                     timeout_job_seg: int = 45 * 60, limpar_a_cada_seg: int = 10 * 60  ):
     filtros = filtros or {}
-    worker_id = f"{plataforma}-async-{uuid.uuid4().hex[:8]}"
+    codigo_executor = normalizar_codigo_bot(codigo_executor)
+    worker_id = f"{plataforma}-{codigo_executor}-async-{uuid.uuid4().hex[:8]}"
 
     limpar_console()
     carregar_configuracoes(plataforma)
-    controle_logs()
-    iniciar_backup_banco_periodico(plataforma)
+    controle_logs(codigo_executor)
+    if codigo_executor == "GNP":
+        iniciar_backup_banco_periodico(plataforma)
     print(f"[{worker_id}] bot_async iniciado (1 por vez)")
 
     ultima_limpeza = time.time()
     
     try:
-        requeue_jobs_orfaos(plataforma)
+        requeue_jobs_orfaos(plataforma, codigo_executor=codigo_executor)
     except Exception:
         pass
 
     try:
-        requeue_sem_heartbeat(plataforma, minutos_sem_heartbeat=10)
+        requeue_sem_heartbeat(plataforma, minutos_sem_heartbeat=10, codigo_executor=codigo_executor)
     except Exception:
         pass
 
-    #PRD
-    schedule.every().day.at("07:00").do(rotina_envio_planilha_botbool_7h)
-    
-    #DEBUG
-    #schedule.every(10).seconds.do(rotina_envio_planilha_botbool_7h)
-
-    threading.Thread(
-        target=iniciar_agendador_planilha,
-        daemon=True
-    ).start()
+    if codigo_executor == "BOOL":
+        schedule.every().day.at("07:00").do(rotina_envio_planilha_botbool_7h).tag("planilha_botbool")
+        threading.Thread(target=iniciar_agendador_planilha, daemon=True).start()
         
     while True:
         try:  
@@ -216,15 +217,16 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
                 try:
                     limpar_console()
                     carregar_configuracoes(plataforma)
-                    iniciar_backup_banco_periodico(plataforma)
+                    if codigo_executor == "GNP":
+                        iniciar_backup_banco_periodico(plataforma)
                 finally:
                     ultima_limpeza = time.time()
             
             # pega 1 job
-            job = pegar_proximo_job(plataforma, worker_id)
+            job = pegar_proximo_job(plataforma, worker_id, codigo_executor=codigo_executor)
             if not job:
-                requeue_jobs_orfaos(plataforma)
-                requeue_sem_heartbeat(plataforma, minutos_sem_heartbeat=10)
+                requeue_jobs_orfaos(plataforma, codigo_executor=codigo_executor)
+                requeue_sem_heartbeat(plataforma, minutos_sem_heartbeat=10, codigo_executor=codigo_executor)
                 await asyncio.sleep(idle_sleep)
                 continue
 
@@ -246,23 +248,16 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             hb_task = asyncio.create_task(heartbeat_loop())
 
             try:
-                # timeout duro do job (se selenium travar, não derruba o bot inteiro)
-                await asyncio.wait_for(
-                    executar_job_async(job, plataforma, filtros, mostrar_browser, data_inicial, data_final, format_data),
-                    timeout=timeout_job_seg
-                )
+                # O limite gera aviso; a thread precisa terminar antes de liberar ou reenfileirar o job.
+                descricao_job = f"job={job['job_id']} page={job['id_page']} nome={job['name']}"
+                await executar_com_timeout_suave(executar_job_async(job, plataforma, filtros, mostrar_browser, data_inicial, data_final, format_data),
+                                                  timeout_job_seg, descricao_job)
 
                 finalizar_job_queue(job["job_id"])
 
                 dur = time.time() - started
                 print(f"[{worker_id}] OK job={job['job_id']} duracao={dur:.1f}s")
                 logs.info(f"[{worker_id}] OK job={job['job_id']} duracao={dur:.1f}s")
-
-            except asyncio.TimeoutError:
-                dur = time.time() - started
-                err = f"Timeout do job após {timeout_job_seg}s (duracao={dur:.1f}s)"
-                logs.error(f"[{worker_id}] TIMEOUT job={job['job_id']} page={job['id_page']} nome={job['name']} {err}")
-                falhar_job_queue(job["job_id"], err)
 
             except Exception as e:
                 dur = time.time() - started
@@ -272,6 +267,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             finally:
                 heartbeat_stop.set()
                 hb_task.cancel()
+                await asyncio.gather(hb_task, return_exceptions=True)
 
             if not rodar_infinito:
                 break
@@ -283,24 +279,12 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             logs.exception(f"[{worker_id}] erro no loop principal; reiniciando em 10s...")
             await asyncio.sleep(10)
 
-def bot(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
+def bot(plataforma: str, codigo_executor: str = "GNP", filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
         data_final: str = "", format_data: str = "universal"):
     try:
-        asyncio.run(
-            bot_async(
-                plataforma=plataforma,
-                filtros=filtros,
-                mostrar_browser=mostrar_browser,
-                rodar_infinito=rodar_infinito,
-                data_inicial=data_inicial,
-                data_final=data_final,
-                format_data=format_data,
-                min_interval=0.0,
-                idle_sleep=0.2,
-                intervalo_sucesso_seg=180,
-                timeout_job_seg=45 * 60
-            )
-        )
+        execucao = bot_async(plataforma, codigo_executor, filtros, mostrar_browser, rodar_infinito, data_inicial, data_final,
+                             format_data, min_interval=0.0, idle_sleep=0.2, intervalo_sucesso_seg=5, timeout_job_seg=45 * 60)
+        asyncio.run(execucao)
     except Exception as e:
         print(f"Erro fatal no bot: {e}")
         traceback.print_exc()
