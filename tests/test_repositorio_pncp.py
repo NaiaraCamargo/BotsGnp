@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import patch
 
-from pncp_shared.database.repositoriopncp import bloquear_processamento_edital, finalizar_job_queue, gravar_processo_pncp, pegar_proximo_job
+from pncp_shared.database.repositoriopncp import bloquear_processamento_edital, falhar_job_queue, finalizar_job_queue, gravar_processo_pncp, pegar_proximo_job
 from pncp_shared.database.repositoriopncp import retornar_plataformas, retornar_urls
+from pncp_shared.database.repositoriopncp import requeue_jobs_orfaos
 
 
 class CursorFake:
@@ -84,6 +85,27 @@ class ConsultasRepositorioPncpTest(unittest.TestCase):
         sql, valores = cursor.execucoes[0]
         self.assertIn("next_run_at=NOW()", sql)
         self.assertEqual(valores, (10,))
+
+    def test_job_com_falha_volta_para_fila_e_preserva_diagnostico(self):
+        cursor = CursorConsultaFake(respostas=[{"attempts": 2}])
+        with patch("pncp_shared.database.repositoriopncp._conectar_banco", return_value=ConexaoFake(cursor)):
+            falhar_job_queue(10, "erro de teste")
+
+        sql, valores = cursor.execucoes[1]
+        self.assertIn("status='queued'", sql)
+        self.assertNotIn("status=%s", sql)
+        self.assertEqual(valores, ("erro de teste", 3, 10))
+
+    def test_requeue_recupera_jobs_failed_e_running_com_lock_expirado(self):
+        cursor = CursorConsultaFake(respostas=[(4,)])
+        with patch("pncp_shared.database.repositoriopncp._conectar_banco", return_value=ConexaoFake(cursor)):
+            requeue_jobs_orfaos("obra", codigo_executor="EDIT")
+
+        sql, valores = cursor.execucoes[1]
+        self.assertIn("q.status='failed'", sql)
+        self.assertIn("q.status='running'", sql)
+        self.assertIn("CASE WHEN q.status='failed' THEN q.last_error", sql)
+        self.assertEqual(valores, ("Requeue de lock expirado", 4, "EDIT"))
 
     def test_lock_do_edital_e_adquirido_e_liberado(self):
         cursor = CursorConsultaFake(respostas=[(1,), (1,)])

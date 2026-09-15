@@ -862,19 +862,16 @@ def falhar_job_queue(job_id: int, err: str):
         with _conectar_banco() as conexao:
             with conexao.cursor(dictionary=True) as cursor:
 
-                cursor.execute("""SELECT attempts, max_attempts FROM plataformas_page_queue WHERE id=%s LIMIT 1""", (job_id,))
+                cursor.execute("""SELECT attempts FROM plataformas_page_queue WHERE id=%s LIMIT 1""", (job_id,))
                 row = cursor.fetchone()
                 if not row:
                     return
 
                 attempts = int(row["attempts"] or 0) + 1
-                max_attempts = int(row["max_attempts"] or 5)
 
-                status = "queued" if attempts < max_attempts else "failed"
-
-                cursor.execute("""UPDATE plataformas_page_queue SET status=%s, next_run_at=NOW(), locked_by=NULL,
+                cursor.execute("""UPDATE plataformas_page_queue SET status='queued', next_run_at=NOW(), locked_by=NULL,
                     lock_until=NULL, last_error=%s, attempts=%s, updated_at=NOW() WHERE id=%s""",
-                               (status, (err or "")[:4000], attempts, job_id))
+                               ((err or "")[:4000], attempts, job_id))
 
             conexao.commit()
 
@@ -896,14 +893,15 @@ def requeue_jobs_orfaos(plataforma: str, motivo: str = "Requeue de lock expirado
                     cursor.execute("""UPDATE plataformas_page_queue q INNER JOIN pages pg ON pg.id=q.id_page
                         INNER JOIN bot_tipos executor ON executor.id=pg.id_bot_executor
                         SET q.status='queued', q.next_run_at=NOW(), q.locked_by=NULL, q.lock_until=NULL,
-                            q.last_error=%s, q.updated_at=NOW()
-                        WHERE q.id_plataforma=%s AND executor.codigo=%s AND q.status='running'
-                            AND (q.lock_until IS NULL OR q.lock_until<NOW())""",
+                            q.last_error=CASE WHEN q.status='failed' THEN q.last_error ELSE %s END, q.updated_at=NOW()
+                        WHERE q.id_plataforma=%s AND executor.codigo=%s AND (q.status='failed'
+                            OR (q.status='running' AND (q.lock_until IS NULL OR q.lock_until<NOW())))""",
                                    (motivo[:4000], id_plataforma, codigo_executor))
                 else:
                     cursor.execute("""UPDATE plataformas_page_queue SET status='queued', next_run_at=NOW(), locked_by=NULL,
-                        lock_until=NULL, last_error=%s, updated_at=NOW() WHERE id_plataforma=%s AND status='running'
-                        AND (lock_until IS NULL OR lock_until<NOW())""", (motivo[:4000], id_plataforma))
+                        lock_until=NULL, last_error=CASE WHEN status='failed' THEN last_error ELSE %s END, updated_at=NOW()
+                        WHERE id_plataforma=%s AND (status='failed'
+                            OR (status='running' AND (lock_until IS NULL OR lock_until<NOW())))""", (motivo[:4000], id_plataforma))
                 afetadas = cursor.rowcount
             conexao.commit()
             return afetadas
@@ -917,7 +915,7 @@ def renovar_lock_job(job_id: int, worker_id: str):
         with _conectar_banco() as conexao:
             with conexao.cursor() as cursor:
                 cursor.execute("""UPDATE plataformas_page_queue SET lock_until=%s, updated_at=NOW()
-                    WHERE id=%s AND status IN ('running', 'failed') AND locked_by=%s""", (lock_until, job_id, worker_id))
+                    WHERE id=%s AND status='running' AND locked_by=%s""", (lock_until, job_id, worker_id))
             conexao.commit()
     except Exception as e:
         logs.error(f"Erro renovar_lock_job: {e}", exc_info=True)
