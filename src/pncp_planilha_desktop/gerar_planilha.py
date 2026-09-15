@@ -9,7 +9,7 @@ from pncp_planilha_desktop.services.excel_service import (
     gerar_excel
 )
 
-#py -m PyInstaller src/pncp_planilha_desktop/gerar_planilha.py --onefile --noconsole --paths src --add-data "src/pncp_planilha_desktop/gerar_planilha.html;pncp_planilha_desktop" --add-data "src/pncp_bot_obra/config.json;pncp_bot_obra" --add-data "src/pncp_shared/metadata/metadados.db;pncp_shared/metadata"
+#py -m PyInstaller src/pncp_planilha_desktop/gerar_planilha.py --onefile --noconsole --paths src --add-data "src/pncp_planilha_desktop/gerar_planilha.html;pncp_planilha_desktop"
 
 def caminho_recurso(nome_arquivo):
     if getattr(sys, "frozen", False):
@@ -30,7 +30,8 @@ class Api:
         global nome, filtros
 
         try:
-           carregar_configuracoes(plataforma)
+            plataforma_config = 'planilha'
+            carregar_configuracoes(plataforma_config)
         except:
             return "<p style='color:red;'>Arquivo de configuracao de conexão do banco de dados .json não localizado.</p>"
 

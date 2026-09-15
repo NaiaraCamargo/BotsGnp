@@ -1,9 +1,12 @@
-import mysql
-import mysql.connector
 import json
+from datetime import datetime, timedelta
+
+import mysql.connector
 import mysql.connector.plugins.mysql_native_password
+
 from pncp_shared.config.controle_config import config
-from pncp_shared.utils.funcoespncp import *
+from pncp_shared.logs.controle_logs import logs
+from pncp_planilha_desktop.utils.planilha_utils import plataforma_tem_itens
 
 def retornar_processos(filtros):
     try:
@@ -28,13 +31,33 @@ def retornar_processos(filtros):
         if link:
             query_parts.append("p.link = %s")
             parametros.append(link)
-        
-        if plataforma.lower() == 'obra':
+
+        if 'obra' in plataforma.lower():
             database = "gnpobras"
         elif plataforma.lower() == 'material_escolar':
             database = "gnpmaterialescolar"
         elif plataforma.lower() == 'seguro':
             database = "gnpnew"
+
+        bot_executores = []
+
+        if plataforma.lower() == "obra_all":
+            bot_executores = [1, 2, 3]
+
+        elif plataforma.lower() == "obra_gnp":
+            bot_executores = [1]
+
+        elif plataforma.lower() == "obra_edit":
+            bot_executores = [3]
+
+        elif plataforma.lower() == "obra_bool":
+            bot_executores = [2]
+
+        if bot_executores:
+            placeholders = ", ".join(["%s"] * len(bot_executores))
+            query_parts.append(f"pg.id_bot_executor IN ({placeholders})")
+            parametros.extend(bot_executores)
+
 
         where_extra = ""
         if query_parts:
@@ -60,11 +83,12 @@ def retornar_processos(filtros):
             """
         else:
             campo_itens = "NULL AS itens"
-        
+
         query_final = f"""
             SELECT p.*, pn.*, {campo_itens}
             FROM processos p 
             LEFT JOIN processos_pncp pn ON pn.id_processo = p.id
+            LEFT JOIN pages pg ON pg.id = p.id_page
             WHERE 1=1 {where_extra}
             ORDER BY p.created_at DESC
         """

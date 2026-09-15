@@ -1,17 +1,12 @@
 import os
-import pandas as pd
 import xlsxwriter
 
-from pncp_shared.utils.funcoespncp import (
-    plataforma_tem_itens,
-    format_data,
-    separar_data_hora_formatada,
-    limpar_nome_arquivo
-)
+from pncp_shared.utils.funcoespncp import separar_data_hora_formatada
 from pncp_planilha_desktop.database.repositorio_planilha import (
     retornar_periodo_processos,
     retornar_processos
 )
+from pncp_planilha_desktop.utils.planilha_utils import format_data, limpar_nome_arquivo, plataforma_tem_itens
 
 
 def verificar_existencia_planilha(nome):
@@ -118,7 +113,7 @@ def gerar_excel(filtros, nome):
             ['Link Auxiliar', 'link_auxiliar', 50],
         ]
         
-        if plataforma == "obra":
+        if 'obra' in plataforma.lower():
             colunas_base.append(['Termos de Busca', 'termos', 30])
             
         colunas_base.append(['Descrição', 'descricao', 30])
@@ -199,97 +194,3 @@ def gerar_excel(filtros, nome):
     except Exception as e:
         print(f"Erro ao gerar planilha: {e}")
         return "Não foi possível gerar a planilha."
-
-
-def gerar_excel_registros(processos, plataforma, registros_novos):
-    arquivo = str(plataforma + '_new_registros.xlsx')
-
-    try: 
-        if not os.path.exists(arquivo):
-            print('Criando novo arquivo de registros...')
-            criar_excel_registros(plataforma)
-        if registros_novos:
-            adicionar_registros(processos, arquivo,plataforma)
-        else:
-            atualizar_registros(processos, arquivo)
-    except Exception as e:
-        print(e)
-
-
-def criar_excel_registros(plataforma):
-    try:
-        if str(plataforma).strip() == '':
-            raise Exception('Não foi possível identificar o bot!')
-
-        workbook = xlsxwriter.Workbook(str(plataforma) + '_new_registros.xlsx')
-        worksheet = workbook.add_worksheet()
-       
-        #  Nome da coluna, Tamanho da célula  
-        dados = (['Situação', 10],['Licitação', 10],['CNPJ', 15],['Órgão', 20],['Estado', 10],['UASG', 10],['Número', 10],
-                    ['Número Aux', 10], ['Data de Abertura', 10], ['Hora', 10], ['Modalidade de Disputa', 20], ['N° Itens', 10], 
-                    ['Valor Estimado', 10], ['Link', 50],['Link Auxiliar', 50],  ['Descrição', 30])     
-    
-        cabecalho = ()
-        for d in dados:
-            cabecalho = cabecalho + (d[0],)
-        worksheet.write_row(0, 0, cabecalho)
-
-        for col_num in range(len(dados)):
-            worksheet.set_column(col_num, col_num, dados[col_num][1] + 4)
-
-        bold_format = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter'})
-        worksheet.set_row(0, None, bold_format)
-        worksheet.freeze_panes(1, 0)
-        workbook.close()
-    except Exception as e:
-        print('Erro: ' + str(e))
-
-
-def adicionar_registros(processos, arquivo):
-    try:
-        df = pd.read_excel(arquivo)
-       
-        for processo in processos:
-            registros = pd.DataFrame({
-                'Situação': [processo.get('Situacao')],
-                'Licitação': [processo.get('Licitacao')],
-                'CNPJ': [processo.get('Cnpj')],
-                'Órgão': [processo.get('Orgao')],
-                'Estado': [processo.get('Uf')],
-                'UASG': [processo.get('CodigoUnidadeCompradora')],
-                'Número': [processo.get('Numero')],
-                'Número Aux': [processo.get('NumeroAux')],
-                'Data de Abertura': [processo.get('DataFim')],
-                'Hora': [processo.get('HoraFim')],
-                'Modalidade de Disputa': [processo.get('ModoDeDisputa')],
-                'N° Itens': [processo.get('QuantidadeItens')],
-                'Valor Estimado': [processo.get('ValorTotalEstimadoCompra')],
-                'Link': [processo.get('Link')],
-                'Link Auxiliar': [processo.get('LinkBotao')],
-                'Descrição': [processo.get('Descricao')]
-            })
-
-            df = pd.concat([df, registros], ignore_index=True)
-                     
-        df.to_excel(arquivo, index=False)
-    except Exception as e:
-        print(e)
-
-
-def atualizar_registros(processos, arquivo):
-    try:
-        df = pd.read_excel(arquivo)
-
-        for processo in processos:
-            linha = df[df['Link'] == processo['Link']].index
-
-            if not linha.empty:
-                df.loc[linha[0], 'Data Registro'] = processo['Data']
-                df.loc[linha[0], 'CNPJ'] = processo['Cnpj']
-                df.loc[linha[0], 'Órgão'] = processo['Orgao']
-                df.loc[linha[0], 'Número'] = processo['Numero']
-                df.loc[linha[0], 'Data'] = processo['Data']
-
-        df.to_excel(arquivo, index=False)
-    except Exception as e:
-        print(e)
