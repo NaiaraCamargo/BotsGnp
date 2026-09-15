@@ -54,6 +54,7 @@ PACOTES_CONFIG = {
     "seguro": "pncp_bot_seguro",
     "materialescolar": "pncp_bot_material_escolar",
     "mapfre": "mapfre_downloader",
+    "planilha": "pncp_planilha_desktop"
 }
 
 
@@ -117,21 +118,6 @@ def carregar_configuracoes(plataforma=None, nome_pacote=None):
 
     except Exception as e:
         print("Erro ao carregar configurações:", e)
-        raise
-
-
-def atualizar_arquivo_configuracoes(plataforma=None, nome_pacote=None):
-    try:
-        caminho = caminho_config(
-            plataforma=plataforma,
-            nome_pacote=nome_pacote
-        )
-
-        with open(caminho, "w", encoding="utf-8") as f:
-            json.dump(configuracoes, f, indent=4, ensure_ascii=False)
-
-    except Exception as e:
-        print("Erro ao salvar configurações:", e)
         raise
 
 

@@ -1,10 +1,8 @@
 import locale
 import os
 import re
-from time import sleep
 import unicodedata
-from datetime import datetime, timedelta
-from urllib.parse import unquote_plus
+from datetime import datetime
 from pncp_shared.logs.controle_logs import logs
 from pncp_shared.config.controle_config import configuracoes
  
@@ -116,14 +114,6 @@ def limpar_cnpj(cnpj):
 def remover_acentos(texto):
       return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
 
-def normalizar_unicode(texto):
-    # Remove acentuação e caracteres não-ASCII (último recurso)
-    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
-
-def normalizar_hifens(texto):
-    # Substitui hífens especiais por hífen ASCII padrão "-"
-    return re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2212]', '-', texto)
-
 def limpar_para_mysql(texto):
     if texto is None:
         return None
@@ -135,12 +125,6 @@ def limpar_para_mysql(texto):
     texto = texto.strip()
 
     return texto
-
-def remover_acentos_ramos(texto):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', texto)
-        if unicodedata.category(c) != 'Mn'
-    )
 
 def obter_pastas_download(edital, plataforma):
     try:
@@ -272,15 +256,3 @@ def separar_data_hora_formatada(data_hora):
     except Exception as e:
         logs.error("Nao foi possivel separar data e hora: " + str(data_hora), str(e))
         return "", ""
-    
-def plataforma_tem_itens(plataforma):
-    return plataforma.lower() not in ["seguro"]
-
-def format_data(data):
-    data = data.split("-")
-    return data[2] + "-" + data[1] + "-" + data[0]
-
-def limpar_nome_arquivo(nome):
-    nome = re.sub(r'[\\/:*?"<>|]', '_', nome)
-    nome = nome.strip()
-    return nome or "arquivo"

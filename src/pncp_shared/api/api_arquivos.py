@@ -18,12 +18,14 @@ import pandas as pd
 
 from pncp_shared.logs.controle_logs import *
 from pncp_shared.utils.funcoespncp import *
+from pncp_shared.api.cliente_pncp import requisicao_pncp
 
 PNCP = "https://pncp.gov.br/api/pncp/v1"
+TAMANHO_PAGINA_ARQUIVOS = 20
 
 def get_json(url, params=None, timeout=30):
     try:
-        r = requests.get(url, params=params, timeout=timeout)
+        r = requisicao_pncp("GET", url, params=params, timeout=timeout)
         r.raise_for_status()
         
         try:
@@ -51,28 +53,38 @@ def get_json(url, params=None, timeout=30):
 def buscar_arquivos(cnpj: str, ano: int, sequencial: int, link, timeout=30):
     try:
         arquivos_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
-        arquivos_response = get_json(arquivos_url, params={"pagina": 1}, timeout=timeout)
-        
-        if arquivos_response is None:
-                return []
-            
         arquivos = []
-        for arquivo in arquivos_response:
-            if not isinstance(arquivo, dict) or not arquivo.get("statusAtivo", True):
-                continue
+        documentos_vistos = set()
+        pagina = 1
 
-            doc_id = arquivo.get("sequencialDocumento")
-            if doc_id is None:
-                continue
+        while True:
+            arquivos_response = get_json(arquivos_url, params={"pagina": pagina, "tamanhoPagina": TAMANHO_PAGINA_ARQUIVOS}, timeout=timeout)
+            if arquivos_response is None:
+                return []
 
-            arquivos.append({
-                "doc_id": int(doc_id),
-                "nome": arquivo.get("titulo") or "Desconhecido",
-                "tipo": arquivo.get("tipoDocumentoNome") or arquivo.get("tipoDocumentoDescricao") or "",
-                "data": arquivo.get("dataPublicacaoPncp") or "",
-                "url": arquivo.get("url") or arquivo.get("uri"), 
-                "meta": arquivo
-            })
+            dados_pagina = arquivos_response.get("data") or [] if isinstance(arquivos_response, dict) else arquivos_response
+            if not isinstance(dados_pagina, list):
+                return []
+
+            novos_documentos = 0
+            for arquivo in dados_pagina:
+                if not isinstance(arquivo, dict) or not arquivo.get("statusAtivo", True):
+                    continue
+
+                doc_id = arquivo.get("sequencialDocumento")
+                if doc_id is None or doc_id in documentos_vistos:
+                    continue
+
+                documentos_vistos.add(doc_id)
+                novos_documentos += 1
+                arquivos.append({"doc_id": int(doc_id), "nome": arquivo.get("titulo") or "Desconhecido",
+                                  "tipo": arquivo.get("tipoDocumentoNome") or arquivo.get("tipoDocumentoDescricao") or "",
+                                  "data": arquivo.get("dataPublicacaoPncp") or "", "url": arquivo.get("url") or arquivo.get("uri"), "meta": arquivo})
+
+            if len(dados_pagina) < TAMANHO_PAGINA_ARQUIVOS or novos_documentos == 0:
+                break
+
+            pagina += 1
 
         return arquivos
 
@@ -104,52 +116,50 @@ def salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, sequencial):
                 if not doc_id:
                     continue
 
-                for tentativa in range(1, 3):
-                    try:
-                        resp = baixar_arquivo_api(cnpj, ano, sequencial, int(doc_id), edital.get("Link"))
-                        if not resp:
-                            continue
+                try:
+                    resp = baixar_arquivo_api(cnpj, ano, sequencial, int(doc_id), edital.get("Link"))
+                    if not resp:
+                        continue
 
-                        base_nome, ext = obter_extensao_response(resp, nome_limpo)
+                    base_nome, ext = obter_extensao_response(resp, nome_limpo)
 
-                        if not base_nome:
-                            base_nome = nome_limpo.replace('.', '-')
+                    if not base_nome:
+                        base_nome = nome_limpo.replace('.', '-')
+                    else:
+                        base_nome = str(base_nome).replace('.', '-')
+
+                    if "edital" in tipo.lower():
+                        if quantidadeTipoEdital > 1:
+                            nome_arquivo = f"1-{base_nome}{ext}"
                         else:
-                            base_nome = str(base_nome).replace('.', '-')
+                            nome_arquivo = f"1-Edital{ext}"
+                    else:
+                        nome_arquivo = f"{base_nome}{ext}"
 
-                        if "edital" in tipo.lower():
-                            if quantidadeTipoEdital > 1:
-                                nome_arquivo = f"1-{base_nome}{ext}"
-                            else:
-                                nome_arquivo = f"1-Edital{ext}"
-                        else:
-                            nome_arquivo = f"{base_nome}{ext}"
+                    nome_arquivo = re.sub(r'[\\/:*?"<>|]', '_', nome_arquivo)
+                    caminho_completo = os.path.join(pasta_edital, nome_arquivo)
+                    caminho_em_compactados = os.path.join(pasta_edital, "compactados", nome_arquivo)
 
-                        nome_arquivo = re.sub(r'[\\/:*?"<>|]', '_', nome_arquivo)
-                        caminho_completo = os.path.join(pasta_edital, nome_arquivo)
-                        caminho_em_compactados = os.path.join(pasta_edital, "compactados", nome_arquivo)
+                    if os.path.exists(caminho_completo) or os.path.exists(caminho_em_compactados):
+                        if os.path.exists(caminho_completo):
+                            print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_completo}.\n")
+                        if os.path.exists(caminho_em_compactados):
+                            print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_em_compactados}.\n")
+                        continue
 
-                        if os.path.exists(caminho_completo) or os.path.exists(caminho_em_compactados):
-                            if os.path.exists(caminho_completo):
-                                print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_completo}.\n")
-                            if os.path.exists(caminho_em_compactados):
-                                print(f"O arquivo {nome_arquivo} já existe no caminho {caminho_em_compactados}.\n")  
-                            break
+                    with open(caminho_completo, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=1024 * 256):
+                            if chunk:
+                                f.write(chunk)
 
-                        with open(caminho_completo, "wb") as f:
-                            for chunk in resp.iter_content(chunk_size=1024 * 256):
-                                if chunk:
-                                    f.write(chunk)
+                    arquivos_baixados += 1
+                    print(f"[ARQUIVO SALVO VIA API]: {caminho_completo}\n")
+                    logs.info(f"[ARQUIVO SALVO VIA API]: {caminho_completo}\n")
 
-                        arquivos_baixados += 1
-                        print(f"[ARQUIVO SALVO VIA API]: {caminho_completo}\n")
-                        logs.info(f"[ARQUIVO SALVO VIA API]: {caminho_completo}\n")
+                    executar_verificacao_arquivos(caminho_completo, ext, pasta_edital, nome_arquivo)
 
-                        executar_verificacao_arquivos(caminho_completo, ext, pasta_edital, nome_arquivo)
-                        break
-
-                    except Exception as e_download:
-                        logs.error(f"[ERRO DOWNLOAD TENTATIVA {tentativa}] doc_id={doc_id} link={edital.get('Link')} erro={e_download}")
+                except Exception as e_download:
+                    logs.error(f"[ERRO DOWNLOAD] doc_id={doc_id} link={edital.get('Link')} erro={e_download}")
 
             except Exception as e_item:
                 logs.error(f"[ERRO PROCESSAR ARQUIVO] {edital.get('Link')} erro={e_item}")
@@ -169,7 +179,7 @@ def salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, sequencial):
 def baixar_arquivo_api(cnpj: str, ano: int, sequencial: int, doc_id: int, link="", timeout=120):
     try:                
         url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos/{doc_id}"
-        r = requests.get(url, stream=True, timeout=timeout)
+        r = requisicao_pncp("GET", url, stream=True, timeout=timeout)
 
         if r.status_code == 200:
             return r
@@ -262,6 +272,52 @@ def obter_extensao_response(response, nome_limpo):
         logs.error("Erro ao obter_extensao_response arquivos - ", str(e))
         return None, ".pdf"
 
+def validar_pdf_comprimido(caminho_original, caminho_comprimido):
+    try:
+        if not os.path.isfile(caminho_comprimido):
+            logs.error(f"PDF comprimido não foi criado: {caminho_comprimido}")
+            return False
+
+        if os.path.getsize(caminho_comprimido) <= 0:
+            logs.error(f"PDF comprimido está vazio: {caminho_comprimido}")
+            return False
+
+        reader_comprimido = PdfReader(caminho_comprimido, strict=False)
+        paginas_comprimido = len(reader_comprimido.pages)
+
+        if paginas_comprimido <= 0:
+            logs.error(f"PDF comprimido não contém páginas: {caminho_comprimido}")
+            return False
+
+        try:
+            reader_original = PdfReader(caminho_original, strict=False)
+            paginas_original = len(reader_original.pages)
+        except Exception as e_original:
+            # O Ghostscript pode corrigir PDFs que o PyPDF2 não consegue abrir.
+            logs.warning(
+                f"Não foi possível validar as páginas do PDF original "
+                f"{caminho_original}: {e_original}"
+            )
+            return True
+
+        if paginas_original != paginas_comprimido:
+            logs.error(
+                f"Quantidade de páginas diferente após compressão: "
+                f"original={paginas_original}, comprimido={paginas_comprimido}, "
+                f"arquivo={caminho_original}"
+            )
+            return False
+
+        return True
+
+    except Exception as e:
+        logs.error(
+            f"PDF inválido após compressão: {caminho_comprimido} - {e}",
+            exc_info=True
+        )
+        return False
+
+
 def comprimir_pdf(caminho_pdf):
     try:
         novo_pdf = f"{os.path.splitext(caminho_pdf)[0]}_comprimido.pdf"
@@ -277,8 +333,26 @@ def comprimir_pdf(caminho_pdf):
             caminho_pdf
         ]
         ghostscript.Ghostscript(*args)
+
+        if not validar_pdf_comprimido(caminho_pdf, novo_pdf):
+            logs.error(
+                f"Saída do Ghostscript inválida. Mantendo o PDF original: "
+                f"{caminho_pdf}"
+            )
+
+            if os.path.isfile(novo_pdf):
+                try:
+                    os.remove(novo_pdf)
+                except OSError as e_remover:
+                    logs.error(
+                        f"Não foi possível remover PDF comprimido inválido "
+                        f"{novo_pdf}: {e_remover}"
+                    )
+
+            return caminho_pdf
+
         print(f"PDF {caminho_pdf} comprimido e salvo como {novo_pdf}")
-        logs.info(f"PDF comprimido: {caminho_pdf}")
+        logs.info(f"PDF comprimido e validado: {novo_pdf}")
         return novo_pdf      
     except Exception as e:  
         print(f"Erro ao comprimir {caminho_pdf} com Ghostscript: {e}")
