@@ -22,6 +22,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from pncp_shared.utils.funcoespncp import *
 from pncp_shared.database.repositoriopncp import *
 from pncp_shared.logs.controle_logs import logs
+from pncp_shared.api.cliente_pncp import executar_navegacao_pncp
 
 
 def caminho_base_execucao():
@@ -332,13 +333,7 @@ def criar_driver(mostrar_browser=False):
 
 def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
     try:
-        if processar_dia and 5 <= hora_atual < 9:
-            url = url_base.replace(
-                next((part for part in url_base.split('&') if part.startswith('tam_pagina=')), '&tam_pagina=20'),
-                'tam_pagina=50'
-            )
-        else:
-            url = url_base
+        url = re.sub(r'([?&]tam_pagina=)\d+', r'\g<1>20', url_base)
 
         if driver is None:
             raise ValueError("O driver veio None ao tentar acessar a URL.")
@@ -346,10 +341,14 @@ def acessar_url(driver, url_base, plataforma, processar_dia, hora_atual):
         if not url or not str(url).strip():
             raise ValueError("A URL esta vazia ou invalida.")
 
-        driver.get(url)
+        navegar_url_pncp(driver, url)
 
     except Exception as e:
         logs.error(f"ERRO ao acessar URL: {str(e)}")
         logs.error(traceback.format_exc())
         time.sleep(0.2)
         raise
+
+
+def navegar_url_pncp(driver, url):
+    return executar_navegacao_pncp(lambda: driver.get(url))

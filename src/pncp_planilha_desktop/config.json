@@ -1,0 +1,17 @@
+{
+    "token_telegram": "7503676291:AAFFcc1J8Ne9wUvs6wRLifdrFt3LPxybmEY",
+    "token_telegram_alterados": "6897682861:AAHl__Zb__STWUi3Uhr37vS07J-4JHo_ETY",
+    "dias_limpar_logs": 15,
+    "conexao_banco": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "217799",
+        "database": "gnpobras"
+    },
+    "UNRAR_TOOL": "C:/BOTGNP/Bot Gnp New/Ferramentas/unrar.exe",
+    "path_wkhtmltoimage": "",
+    "pasta_downloads": "C:/PROGRAMAS GNP/BOTS GNP/BANCO DE EDITAIS/OBRAS/",
+    "raiz_local": "C:/PROGRAMAS GNP",
+    "raiz_server": "//Killer"
+}

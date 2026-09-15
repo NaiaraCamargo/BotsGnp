@@ -125,12 +125,6 @@ def apagar_plataforma(id_plataforma):
     carregar_plataformas(window)
 
 
-def atualizar_usuario(id_usu, usuario_novo, window):
-
-
-    carregar_plataformas(window)
-
-
 def js(window):
     carregar_plataformas(window)
 

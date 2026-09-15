@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from threading import Lock
 from email.message import EmailMessage
 import os
 import smtplib
@@ -58,22 +57,21 @@ def pegar_valor(dic, chaves, padrao=""):
         return padrao
 
 
-def normalizar_palavras_chave(valor):
-    if isinstance(valor, list):
-        return ", ".join(str(v) for v in valor)
-
-    return valor or ""
-
-def gerar_excel_botbool_dia_anterior(processos, pasta_saida="planilhas"):
+def gerar_excel_botbool_dia_anterior(processos, pasta_saida="planilhas", data_inicial=None,data_final=None):
     try:
-        ontem = (datetime.now() - timedelta(days=1)).date()
+        data_inicial = data_inicial or (datetime.now() - timedelta(days=1)).date()
+        data_final = data_final or data_inicial
 
         if not processos:
             return None, 0
 
         os.makedirs(pasta_saida, exist_ok=True)
 
-        nome_arquivo = f"editais_botbool_{ontem.strftime('%Y_%m_%d')}.xlsx"
+        sufixo_data = data_inicial.strftime("%Y_%m_%d")
+        if data_final != data_inicial:
+            sufixo_data += f"_a_{data_final.strftime('%Y_%m_%d')}"
+
+        nome_arquivo = f"editais_botbool_{sufixo_data}.xlsx"
         caminho = os.path.join(pasta_saida, nome_arquivo)
 
         workbook = xlsxwriter.Workbook(caminho)

@@ -148,7 +148,6 @@ def obter_pasta_reserva(reserva, id_reserva, orgao):
 
         pasta_reserva.mkdir(parents=True, exist_ok=True)
 
-        logs.info(f"\nPasta da reserva preparada: {pasta_reserva}")
         return pasta_reserva
     except Exception as ex:
         logs.error(f"\nERRO ao obter/criar pasta da reserva: {ex}")
@@ -333,8 +332,6 @@ def carregar_arquivos_do_zip_existente(pasta_reserva, id_reserva, orgao):
         for arquivo in pasta_reserva.iterdir():
             if arquivo.is_file() and arquivo.suffix.lower() != ".zip":
                 arquivos_existentes.append({"arquivo": str(arquivo)})
-
-        logs.info(f"\nZIP existente carregado para reaproveitamento: {caminho_zip}")
         return arquivos_existentes
     except Exception as ex:
         logs.error(f"\nERRO ao carregar arquivos do ZIP existente: {ex}")
@@ -461,7 +458,6 @@ def baixar_arquivo_mapfre(driver_mapfre, aba_principal, url_arquivo, arquivo_gri
 
 def baixar_url_com_cookies_do_selenium(driver, url, destino_base):
     try:
-        logs.info(f"\nIniciando download da URL: {url}\n")
         sessao = requests.Session()
 
         for cookie in driver.get_cookies():
@@ -496,7 +492,6 @@ def baixar_url_com_cookies_do_selenium(driver, url, destino_base):
 def compactar_arquivos_baixados(arquivos_baixados, pasta_downloads, id_reserva, orgao):
     try:
         if not arquivos_baixados:
-            logs.info("\nNenhum arquivo baixado para compactar.")
             return ""
 
         arquivos_para_zip = []
@@ -506,7 +501,6 @@ def compactar_arquivos_baixados(arquivos_baixados, pasta_downloads, id_reserva, 
                 caminho_arquivo = Path(arquivo_info.get("arquivo", ""))
 
                 if not caminho_arquivo.exists() or not caminho_arquivo.is_file():
-                    logs.info(f"\nArquivo ignorado na compactacao, nao encontrado: {caminho_arquivo}")
                     continue
 
                 arquivos_para_zip.append(caminho_arquivo)
@@ -531,8 +525,6 @@ def compactar_arquivos_baixados(arquivos_baixados, pasta_downloads, id_reserva, 
                 caminho_zip = caminho_disponivel(caminho_zip)
                 logs.info(f"\nNovo caminho de ZIP gerado apos falha ao excluir o antigo: {caminho_zip}")
 
-        logs.info(f"\nIniciando compactacao de {len(arquivos_para_zip)} arquivo(s): {caminho_zip}\n")
-
         arquivos_zipados = []
 
         with zipfile.ZipFile(caminho_zip, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9,) as zip_ref:
@@ -540,7 +532,6 @@ def compactar_arquivos_baixados(arquivos_baixados, pasta_downloads, id_reserva, 
                 try:
                     zip_ref.write(caminho_arquivo, arcname=caminho_arquivo.name)
                     arquivos_zipados.append(caminho_arquivo)
-                    logs.info(f"\nArquivo adicionado ao ZIP: {caminho_arquivo}")
                 except Exception as ex_zip_arquivo:
                     logs.error(f"\nERRO ao adicionar arquivo ao ZIP {caminho_arquivo}: {ex_zip_arquivo}")
                     continue
@@ -556,8 +547,6 @@ def compactar_arquivos_baixados(arquivos_baixados, pasta_downloads, id_reserva, 
 
         tamanho_original = sum(arquivo.stat().st_size for arquivo in arquivos_zipados)
         tamanho_zip = caminho_zip.stat().st_size
-        
-        logs.info( "\nZIP criado: %s | original=%s bytes | zip=%s bytes", caminho_zip, tamanho_original, tamanho_zip,)
         
         for caminho_arquivo in arquivos_zipados:
             try:
@@ -584,7 +573,6 @@ def extrair_arquivos_grd_docs(driver_mapfre, pagina_grid=1):
                 colunas = linha.find_elements(By.TAG_NAME, "td")
 
                 if len(colunas) < 8:
-                    logs.info(f"\nLinha {indice} ignorada: quantidade de colunas invalida.")
                     continue
 
                 numero_arquivo = colunas[1].text.strip()
@@ -734,7 +722,6 @@ def ir_para_pagina_grd_docs(driver_mapfre, pagina_destino):
 
                 assinatura_nova = obter_assinatura_grd_docs(driver_mapfre)
                 if assinatura_nova and assinatura_nova != assinatura_anterior:
-                    logs.info(f"\nGrid grdDocs posicionada na pagina {pagina_destino}.")
                     return True
             except Exception as ex_tentativa:
                 logs.error(f"\nERRO ao ir para pagina {pagina_destino} da grid tentativa={tentativa}: {mensagem_resumida_erro(ex_tentativa)}")
@@ -790,7 +777,6 @@ def extrair_todos_arquivos_grd_docs(driver_mapfre):
                 if nova_pagina not in paginas_visitadas and nova_pagina not in paginas_pendentes:
                     paginas_pendentes.append(nova_pagina)
 
-        logs.info(f"\nTotal de arquivos unicos extraidos da grid: {len(arquivos)}")
         return arquivos
     except Exception as ex:
         logs.error(f"\nERRO ao extrair todos os arquivos da grid: {ex}")
@@ -821,7 +807,7 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         if not arquivos_grid:
             msg = "\nNenhum arquivo encontrado na grid grdDocs"
             logs.info(msg)
-            return 0, 0, orgao, url_arquivo, False, msg
+            return 0, 0, orgao, url_arquivo, True, msg
 
         arquivos_baixados = carregar_arquivos_do_zip_existente(pasta_reserva, id_reserva, orgao)
         erros_download = []
@@ -833,7 +819,6 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
             ultimo_erro = ""
 
             if arquivo_ja_existe_na_reserva(nome_base, arquivos_baixados):
-                logs.info("\nArquivo Mapfre %s/%s ja existente no ZIP/pasta da reserva: %s", indice, len(arquivos_grid), nome_base)
                 print("Ja existente:", nome_base)
                 continue
 
@@ -849,7 +834,6 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
                         "arquivo": caminho_baixado
                         })
                     
-                    logs.info("\nArquivo Mapfre baixado %s/%s: %s", indice, len(arquivos_grid), caminho_baixado)
                     print(f"Baixado: {caminho_baixado} \n")
                     baixou_com_sucesso = True
                     break
@@ -888,7 +872,7 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         quantidade_arquivos = len(arquivos_grid)
         quantidade_baixado = len(arquivos_baixados)
 
-        if quantidade_arquivos == 0:
+        if quantidade_baixado == 0:
             msg = "Nenhum arquivo foi baixado com sucesso"
             logs.error(msg)
             return 0, quantidade_baixado, orgao, url_arquivo, False, msg
@@ -896,19 +880,24 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         if not caminho_zip:
             msg = "ERRO - Arquivos baixados, mas ZIP nao foi criado"
             logs.error(msg)
-            return quantidade_arquivos, quantidade_baixado, orgao, url_arquivo, False, msg
+            return quantidade_arquivos, quantidade_baixado, orgao, url_arquivo, True, msg
 
         if erros_download:
             msg = "ERRO - Alguns arquivos nao foram baixados: " + " | ".join(erros_download)
             logs.error(msg)
             return quantidade_arquivos, quantidade_baixado, orgao, url_arquivo, False, msg
     
-        logs.info(f"Arquivos da reserva {id_reserva} compactados em: {caminho_zip}")
         print("\nZIP criado:", caminho_zip)
 
         return quantidade_arquivos, quantidade_baixado, orgao, url_arquivo, True, ""
     
     except Exception as ex:
-        msg = f"ERRO - Ao processar a url dos arquivos: {ex}"
+        mensagem_erro = str(ex).strip()
+        if mensagem_erro == 'Message:':
+            msg = "Não deu Link"
+            logs.info(msg)
+            return 0, 0, "", "", True, msg
+
+        msg = f"ERRO - Ao processar a url dos arquivos: {mensagem_erro}"
         logs.error(msg)
         return 0, 0, "", "", False, msg

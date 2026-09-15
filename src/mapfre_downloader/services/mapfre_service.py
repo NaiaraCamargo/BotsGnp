@@ -7,36 +7,6 @@ from pncp_shared.utils.drivers import controles_iniciais
 from pncp_shared.config.controle_config import configuracoes
 from pncp_shared.logs.controle_logs import logs
 
-
-
-def wait_for_updatepanel(driver, timeout=10, stable_time=0.3):
-    """Aguarda o DOM ficar estável (sem mudanças) por stable_time segundos consecutivos."""
-    start_time = time.time()
-    last_html = driver.page_source
-    last_change = time.time()
-
-    while time.time() - start_time < timeout:
-        time.sleep(0.1)
-        current_html = driver.page_source
-        if current_html != last_html:
-            last_change = time.time()
-            last_html = current_html
-        elif time.time() - last_change >= stable_time:
-            return 
-
-    raise TimeoutError("Timeout esperando UpdatePanel ou DOM estabilizar.")
-
-
-def wait_until_input_ready(driver, by, value, timeout=15):
-    def input_is_empty_and_ready(drv):
-        try:
-            el = drv.find_element(by, value)
-            return el.is_displayed() and el.is_enabled() and el.get_attribute("value") == ""
-        except:
-            return False
-
-    WebDriverWait(driver, timeout).until(input_is_empty_and_ready)
-
 def processar_login_mafre(driver_mapfre):
     tentativas = 0
     max_tentativas = 2

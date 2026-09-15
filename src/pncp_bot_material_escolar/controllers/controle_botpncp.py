@@ -11,6 +11,7 @@ from pncp_bot_material_escolar.crawlers.crawler_pncp import *
 from pncp_shared.database.repositoriopncp import *
 from pncp_shared.database.backup_bancos import executar_backup_se_necessario
 from pncp_shared.utils.funcoespncp import *
+from pncp_shared.utils.asyncio_utils import executar_com_timeout_suave
 from pncp_shared.logs.controle_logs import *
 from pncp_shared.config.controle_config import *
 
@@ -105,7 +106,7 @@ async def executar_job_async(job: dict, plataforma: str, filtros: dict, mostrar_
     )
 
 async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
-                    data_final: str = "", format_data: str = "universal", min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 180,
+                    data_final: str = "", format_data: str = "universal", min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 5,
                     timeout_job_seg: int = 45 * 60, limpar_a_cada_seg: int = 10 * 60  ):
     filtros = filtros or {}
     worker_id = f"{plataforma}-async-{uuid.uuid4().hex[:8]}"
@@ -130,7 +131,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
 
     while True:
         try:  
-            # limpeza/refresh de config a cada X tempo (AGORA FAZ SENTIDO)
+            # limpeza/refresh de config a cada X tempo
             if time.time() - ultima_limpeza >= limpar_a_cada_seg:
                 print(f"[{worker_id}] 2 - vai limpar/recarregar")
                 try:
@@ -141,7 +142,6 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
                     ultima_limpeza = time.time()
                     
             # garante que os jobs existam
-            # enfileirar_paginas_plataforma(plataforma)
         
             # pega 1 job
             job = pegar_proximo_job(plataforma, worker_id)
@@ -169,23 +169,16 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             hb_task = asyncio.create_task(heartbeat_loop())
 
             try:
-                # timeout duro do job (se selenium travar, não derruba o bot inteiro)
-                await asyncio.wait_for(
-                    executar_job_async(job, plataforma, filtros, mostrar_browser, data_inicial, data_final, format_data),
-                    timeout=timeout_job_seg
-                )
+                # O limite gera aviso; a thread precisa terminar antes de liberar ou reenfileirar o job.
+                descricao_job = f"job={job['job_id']} page={job['id_page']}"
+                await executar_com_timeout_suave(executar_job_async(job, plataforma, filtros, mostrar_browser, data_inicial, data_final, format_data),
+                                                  timeout_job_seg, descricao_job)
 
                 finalizar_job_queue(job["job_id"])
 
                 dur = time.time() - started
                 print(f"[{worker_id}] OK job={job['job_id']} duracao={dur:.1f}s")
                 logs.info(f"[{worker_id}] OK job={job['job_id']} duracao={dur:.1f}s")
-
-            except asyncio.TimeoutError:
-                dur = time.time() - started
-                err = f"Timeout do job após {timeout_job_seg}s (duracao={dur:.1f}s)"
-                logs.error(f"[{worker_id}] TIMEOUT job={job['job_id']} page={job['id_page']} {err}")
-                falhar_job_queue(job["job_id"], err)
 
             except Exception as e:
                 dur = time.time() - started
@@ -195,6 +188,7 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             finally:
                 heartbeat_stop.set()
                 hb_task.cancel()
+                await asyncio.gather(hb_task, return_exceptions=True)
 
             if not rodar_infinito:
                 break
@@ -220,7 +214,7 @@ def bot(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = Fa
                 format_data=format_data,
                 min_interval=0.0,
                 idle_sleep=0.2,
-                intervalo_sucesso_seg=180,
+                intervalo_sucesso_seg=5,
                 timeout_job_seg=45 * 60
             )
         )

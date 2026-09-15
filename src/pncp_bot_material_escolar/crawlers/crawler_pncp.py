@@ -5,8 +5,7 @@ from threading import Lock
 
 from selenium.webdriver.common.by import By
 
-from pncp_shared.metadata.controle_metadados import ControleMetadados
-from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais
+from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais, navegar_url_pncp
 from pncp_shared.logs.controle_logs import (
     logs,
     controle_logs,   
@@ -26,7 +25,7 @@ from pncp_shared.database.repositoriopncp import (
     salvar_urls_com_erro_api
 )
 from pncp_bot_material_escolar.services.processamento_edital import processar_texto
-from pncp_shared.utils.urls_pncp import gerar_urls_variantes_pncp
+from pncp_shared.utils.urls_pncp import definir_pagina_pncp, gerar_urls_variantes_pncp
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
@@ -34,8 +33,6 @@ lock_editais = Lock()
 
 retornoMsg = ""
             
-metadados = ControleMetadados()
-
 def carregar_filtros(nome, valores='', filtros_base=None):
     if filtros_base is None:
         filtros_base = {}
@@ -92,8 +89,12 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
         try:            
             driver, profile_dir = criar_driver(mostrar_browser)
             processou_original = False
+            falhas_variantes = []
+            total_consultas = len(urls_para_processar)
+            termos_planejados = " | ".join(item["termo_busca"] for item in urls_para_processar)
+            logs.info(f"[CRAWLER] page={id_pagina} consultas={total_consultas} termos={termos_planejados}")
             
-            for item_url in urls_para_processar:
+            for indice, item_url in enumerate(urls_para_processar, start=1):
                 url_base = item_url["url"]
                 termo_busca = item_url["termo_busca"]
                 
@@ -112,7 +113,8 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     pagina = 2
                     total_itens_tmp = 0
 
-                    print(f"\nIniciando processamento do termo: {termo_busca} | URL: {url_base}\n")
+                    print(f"\nIniciando processamento {indice}/{total_consultas}: {termo_busca} | URL: {url_base}\n")
+                    logs.info(f"[CRAWLER] Iniciando consulta {indice}/{total_consultas} termo='{termo_busca}' url='{url_base}'")
                     total_processados = processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios, lista_elementos, plataforma, total_processados, 
                                         quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api,
                                         termo_busca, id_plataforma, termo_orignal)
@@ -121,7 +123,11 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
 
                 except Exception as e_variante:
                     logs.error(f"Erro ao processar variante termo='{termo_busca}' url='{url_base}': {e_variante}", exc_info=True)
+                    falhas_variantes.append(termo_busca)
                     continue
+
+            if falhas_variantes:
+                raise RuntimeError(f"Falha em {len(falhas_variantes)}/{total_consultas} consultas: {', '.join(falhas_variantes)}")
                 
             if processou_original:
                 atualizar_ultima_data(id_pagina)
@@ -245,11 +251,11 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
         logs.info(f"Total Processados {palavra_chave}: {termo_busca}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
-            url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
+            url = definir_pagina_pncp(urlBase, pagina)
             print(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
             logs.info(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
 
-            driver.get(url)
+            navegar_url_pncp(driver, url)
             listaElementos = []
             
             total_antes = total_processados

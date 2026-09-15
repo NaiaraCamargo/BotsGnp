@@ -1,37 +1,16 @@
 # Imports da biblioteca padrão
-import math
-import os
 import re
-import string
-from threading import Thread
 import time
 import copy
-import shutil
-import locale
-import zipfile
-import mimetypes
-import sqlite3
-from pathlib import Path
 from itertools import islice
 from datetime import datetime
-from os.path import isfile
-import rarfile
-import subprocess
+
 # Imports de bibliotecas externas
-import requests
-import ghostscript
-import pypandoc
-from PIL import Image
-from unidecode import unidecode
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from PyPDF2 import PdfReader, PdfWriter
+from threading import Lock
 
 # Imports de módulos locais
-from pncp_shared.metadata.controle_metadados import ControleMetadados
-from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais
+from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais, navegar_url_pncp
 from pncp_shared.logs.controle_logs import (
     logs,
     controle_logs,   
@@ -39,31 +18,25 @@ from pncp_shared.logs.controle_logs import (
 from pncp_shared.config.controle_config import(
     configuracoes, 
     carregar_configuracoes,
-    atualizar_arquivo_configuracoes
     ) 
 
 from pncp_shared.database.repositoriopncp import (
+    retornar_buscas_adicionais,
     retornar_registro_paginas,
-    retornar_termos_busca_by_id_page,
-    retornar_qtd_registros_heuristica_busca,
     atualizar_heuristica,
-    atualizar_heuristica_busca,
+    atualizar_heuristica_busca_filtro,
     atualizar_ultima_data,
     salvar_urls_com_erro_api
 )
 from pncp_shared.utils.funcoespncp import limpar_console
+from pncp_shared.utils.urls_pncp import aplicar_parametros_url, definir_pagina_pncp
 from pncp_bot_seguro.services.processamento_edital import processar_texto
-
-from threading import Lock
-import ollama
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
 lock_editais = Lock()
 
 retornoMsg = ""
-
-metadados = ControleMetadados()
 
 def carregar_filtros(nome, valores='', filtros_base=None):
     if filtros_base is None:
@@ -98,71 +71,104 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
     ultima_limpeza = time.time()
     lista_erros_api = []
 
-    try: 
+    try:
         if url.strip() == "":
             logs.error("A URL está vazia")
             return
-        
+
         filtros_base = carregar_filtros(filtros)
         if "banco" not in filtros_base:
             filtros_base["banco"] = {}
         if "palavraschave" not in filtros_base["banco"]:
             filtros_base["banco"]["palavraschave"] = {}
-        url_base = url
 
         while True:
             hora_atual = datetime.now().hour
             processar_dia = configuracoes.get('processar_dia')
             controle_logs()
-            
             driver, profile_dir = None, None
-           
-            try:            
+            url_base = url
+
+            try:
                 driver, profile_dir = criar_driver(mostrar_browser)
-                acessar_url(driver, url_base, plataforma, processar_dia, hora_atual)
-                
-                lista_elementos.clear()
-                total_processados = 0
-                quantidade_para_processar = 0
-                pagina = 2
-                total_itens_tmp = 0
 
-                print(f"\nIniciando processamento da página: {url}\n")
-                total_processados = processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios,lista_elementos, plataforma, total_processados, 
-                    quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api)
-                
-                atualizar_ultima_data(id_pagina)
-                filtros_base["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
+                qtd_padrao = retornar_registro_paginas(id_pagina, 4)
+                buscas = [{
+                    "id": None,
+                    "nome": "padrao",
+                    "url": url,
+                    "qtd_registros": int(qtd_padrao or 0),
+                }]
 
-                #Limpar console a cada 10 minutos
-                if time.time() - ultima_limpeza >= 600:
-                    limpar_console()
-                    carregar_configuracoes(plataforma)
-                    ultima_limpeza = time.time()  
+                for busca_adicional in retornar_buscas_adicionais(id_pagina):
+                    buscas.append({
+                        "id": busca_adicional["id"],
+                        "nome": busca_adicional["nome"],
+                        "url": aplicar_parametros_url(
+                            url,
+                            busca_adicional["parametros_url"]
+                        ),
+                        "qtd_registros": int(busca_adicional["qtd_registros"] or 0),
+                    })
+
+                for busca in buscas:
+                    url_base = busca["url"]
+                    filtros_execucao = copy.deepcopy(filtros_base)
+                    filtros_execucao["banco"]["qtd_registros"] = busca["qtd_registros"]
+
+                    acessar_url(driver, url_base, plataforma, processar_dia, hora_atual)
+
+                    lista_elementos.clear()
+                    print(f"\nIniciando busca: {busca['nome']} | URL: {url_base}\n")
+
+                    total_processados = processar_pagina(
+                        driver, url_base, filtros_execucao, id_pagina,
+                        ids_usuarios, lista_elementos, plataforma, 0, 0, 2,
+                        processar_dia, hora_atual, filtros_execucao,
+                        notificacao_config, 0, lista_erros_api, busca["id"]
+                    )
+
+                    if busca["id"] is None:
+                        atualizar_ultima_data(id_pagina)
+
+                    logs.info(
+                        f"[CRAWLER SEGURO] Finalizada busca='{busca['nome']}' "
+                        f"total_processados={total_processados}"
+                    )
+
+                    if time.time() - ultima_limpeza >= 600:
+                        limpar_console()
+                        carregar_configuracoes(plataforma)
+                        ultima_limpeza = time.time()
 
                 print("\nAguardando novos processos...\n")
-            
+
             except Exception as e_conectar:
                 logs.error(f"Erro ao conectar/processar URL '{url_base}': {e_conectar}", exc_info=True)
-                time.sleep(2)  # Espera 2 segundos antes de tentar novamente
+                time.sleep(5)
 
             finally:
                 try:
                     if lista_erros_api:
-                        salvar_urls_com_erro_api(lista_erros_api, id_pagina=id_pagina, plataforma=plataforma)
+                        salvar_urls_com_erro_api(
+                            lista_erros_api,
+                            id_pagina=id_pagina,
+                            plataforma=plataforma
+                        )
                 except Exception as e:
                     logs.error(f"Erro ao salvar lista_erros_api: {e}", exc_info=True)
-                
+
                 finalizar_driver(driver, profile_dir, contexto="driver PNCP Seguro")
-      
-            time.sleep(0.1)
-          
+
+            return
+
     except Exception as e_crawler:
         logs.error(f"Erro fatal no crawler: {str(e_crawler)}")
 
      
 def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, 
-                     quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api):
+                     quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp,
+                     lista_erros_api, id_busca=None):
     try:
         lista_planilha = []
         controles_iniciais(driver)
@@ -179,7 +185,7 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
         total_itens = total_itens_tmp if total_itens_tmp > 0 else int(match.group(1))
         registros = int(filtrosBase["banco"].get("qtd_registros", 0) or 0)
 
-        if  total_itens == registros:
+        if id_busca is None and total_itens == registros:
             print(f"Execução interrormpida pelo processo de Heurística - {registros}/{total_itens}\n")
             return total_processados
         
@@ -202,9 +208,14 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
 
         palavra_chave = list(filtrosBase['banco']['palavraschave'].keys())[0].strip().lower()
         
-        quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos = calcular_quantidade_para_processar(
-            total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave
-        )
+        if id_busca is not None:
+            quantidade_revisao = int(configuracoes.get("quantidade_revisao_buscas_adicionais", 20) or 20)
+            quantidade_para_processar = min(max(quantidade_revisao, 1), total_itens)
+            processa_mais_paginas, total_itens_tmp, processar_todos = False, total_itens, False
+            logs.info(f"Busca adicional {id_busca}: revisando os {quantidade_para_processar} resultados mais recentes.")
+        else:
+            quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos = calcular_quantidade_para_processar(
+                total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave)
             
         error_timeout = 0
        
@@ -212,22 +223,22 @@ def processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, list
             total_processados += 1
             print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}")
             
-            edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
-                processar_dia,filtrosBase, lock_editais, editais_em_processamento, error_timeout, lista_erros_api)
+            edital, error_timeout = processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual,
+                processar_dia, filtrosBase, lock_editais, editais_em_processamento, error_timeout, lista_erros_api, id_busca)
             
             if edital:
                 lista_planilha.append(copy.deepcopy(edital))
                                
         ##if len(lista_planilha) > 0:
             ##print(f"Processando Planilhas...\n")
-            ##gerar_excel_registros(lista_planilha, plataforma, True) 
             ##time.sleep(1)
                 
         if processar_todos or processa_mais_paginas:
             return processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, 
-                notificacao_config, filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, lista_erros_api)
-                    
-        atualizar_heuristica(id_pagina, total_itens) 
+                notificacao_config, filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
+                lista_erros_api, id_busca)
+
+        atualizar_heuristica_execucao(id_pagina, id_busca, total_itens)
         return total_processados
         
     except Exception as e:
@@ -255,36 +266,46 @@ def calcular_quantidade_para_processar(total_itens, registros, quantidade_para_p
 
     return quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos
 
+
+def atualizar_heuristica_execucao(id_pagina, id_busca, total_itens):
+    if id_busca is None:
+        atualizar_heuristica(id_pagina, total_itens)
+    else:
+        atualizar_heuristica_busca_filtro(id_busca, total_itens)
+
+
 def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, notificacao_config,
-                                  filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, lista_erros_api): 
+                                  filtrosBase, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp,
+                                  lista_erros_api, id_busca=None):
     try:
         print(f"Total Processados {palavra_chave}: {total_processados}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
         logs.info(f"Total Processados {palavra_chave}: {total_processados}/ Total a processar {palavra_chave}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
-            if 10 < quantidade_para_processar <= 50:
-                tam_pagina = quantidade_para_processar + total_processados
-                pagina = 1
-                if 'tam_pagina=' in urlBase:
-                    urlBase = re.sub(r'tam_pagina=\d+', f'tam_pagina={tam_pagina}', urlBase)
-                else:
-                    urlBase += f'&tam_pagina={tam_pagina}'
-
-            url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
+            url = definir_pagina_pncp(urlBase, pagina)
             print(f"Iniciando processamento da palavra_chave: {palavra_chave} na página: {pagina} url: {url}\n")
             logs.info(f"Iniciando processamento da palavra_chave: {palavra_chave} na página: {pagina} url: {url}\n")
 
-            driver.get(url)
-            pagina += 1
+            navegar_url_pncp(driver, url)
             listaElementos = []
 
-            processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados, quantidade_para_processar,
-                           pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api)
+            total_antes = total_processados
+            total_processados = processar_pagina(driver, urlBase, filtrosBase, id_pagina, ids_usuarios,
+                listaElementos, plataforma, total_processados, quantidade_para_processar, pagina, processar_dia, hora_atual,
+                filtros, notificacao_config, total_itens_tmp, lista_erros_api,id_busca
+            )
 
-        atualizar_heuristica(id_pagina, total_itens_tmp) 
-        carregar_configuracoes()
-        filtros["banco"]["qtd_registros"] = retornar_registro_paginas(id_pagina, 4)
-        crawler(urlBase, filtros, notificacao_config)
+            if total_processados == total_antes:
+                logs.info(
+                    f"Sem avanço na página {pagina} da busca '{palavra_chave}'. "
+                    "Encerrando paginação."
+                )
+                break
+
+            pagina += 1
+
+        atualizar_heuristica_execucao(id_pagina, id_busca, total_itens_tmp)
+        carregar_configuracoes(plataforma)
         return total_processados
     except Exception as e:
         logs.error(f"Erro no processamento processar_paginas_adicionais: {e}\n")

@@ -4,9 +4,9 @@ from datetime import datetime
 from threading import Lock
 
 from selenium.webdriver.common.by import By
+from unidecode import unidecode
 
-from pncp_shared.metadata.controle_metadados import ControleMetadados
-from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais
+from pncp_shared.utils.drivers import criar_driver, finalizar_driver, acessar_url, controles_iniciais, navegar_url_pncp
 from pncp_shared.logs.controle_logs import (
     logs,
     controle_logs,   
@@ -23,16 +23,20 @@ from pncp_shared.database.repositoriopncp import (
     atualizar_heuristica,
     atualizar_heuristica_busca,
     atualizar_ultima_data,
-    salvar_urls_com_erro_api
+    salvar_urls_com_erro_api,
 )
+from pncp_bot_obra.database.repositorio_filtros_obras import retornar_dicionario_filtros_obras
 from pncp_bot_obra.services.processamento_edital import processar_texto
-from pncp_shared.utils.urls_pncp import gerar_urls_variantes_pncp
+from pncp_shared.utils.urls_pncp import definir_pagina_pncp, gerar_urls_variantes_pncp
 
 lock_pos_login = Lock()
 editais_em_processamento = set()
 lock_editais = Lock()
             
-metadados = ControleMetadados()
+def palavra_chave_por_termo(termo_busca):
+    termo = unidecode(str(termo_busca or "").strip().lower())
+    termo = re.sub(r"\s+", "_", termo)
+    return f"{termo}*" if termo else ""
 
 def carregar_filtros(nome, valores='', filtros_base=None):
     if filtros_base is None:
@@ -80,6 +84,7 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
             
         termos_variantes = retornar_termos_busca_by_id_page(id_pagina)
         urls_para_processar, termo_orignal = gerar_urls_variantes_pncp(url, termos_variantes)
+        filtros_pagina_original = dict(filtros_base["banco"].get("palavraschave", {}))
 
         hora_atual = datetime.now().hour
         processar_dia = configuracoes.get('processar_dia')
@@ -90,10 +95,18 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
         try:            
             driver, profile_dir = criar_driver(mostrar_browser)
             processou_original = False
+            falhas_variantes = []
+            total_consultas = len(urls_para_processar)
+            termos_planejados = " | ".join(item["termo_busca"] for item in urls_para_processar)
+            logs.info(f"[CRAWLER] page={id_pagina} consultas={total_consultas} termos={termos_planejados}")
             
-            for item_url in urls_para_processar:
+            for indice, item_url in enumerate(urls_para_processar, start=1):
                 url_base = item_url["url"]
                 termo_busca = item_url["termo_busca"]
+
+                palavra_chave_variante = palavra_chave_por_termo(termo_busca)
+                filtros_variante = retornar_dicionario_filtros_obras(palavra_chave_variante, manter_word=True)
+                filtros_base["banco"]["palavraschave"] = filtros_variante or filtros_pagina_original
                 
                 try:
                     if termo_busca == termo_orignal:
@@ -110,16 +123,20 @@ def crawler(url, filtros='', notificacao_config='', mostrar_browser=False):
                     pagina = 2
                     total_itens_tmp = 0
 
-                    print(f"\nIniciando processamento do termo: {termo_busca} | URL: {url_base}\n")
-                    total_processados = processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios, lista_elementos, plataforma, total_processados, 
-                                        quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api,
-                                        termo_busca, id_plataforma, termo_orignal)
+                    print(f"\nIniciando processamento {indice}/{total_consultas}: {termo_busca} | URL: {url_base}\n")
+                    logs.info(f"[CRAWLER] Iniciando consulta {indice}/{total_consultas} termo='{termo_busca}' url='{url_base}'")
+                    total_processados = processar_pagina(driver, url_base, filtros_base, id_pagina, ids_usuarios, lista_elementos, plataforma, total_processados,
+                                                         quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, termo_busca, id_plataforma, termo_orignal)
                 
                     logs.info(f"[CRAWLER] Finalizado termo='{termo_busca}' total_processados={total_processados}")
 
                 except Exception as e_variante:
                     logs.error(f"Erro ao processar variante termo='{termo_busca}' url='{url_base}': {e_variante}", exc_info=True)
+                    falhas_variantes.append(termo_busca)
                     continue
+
+            if falhas_variantes:
+                raise RuntimeError(f"Falha em {len(falhas_variantes)}/{total_consultas} consultas: {', '.join(falhas_variantes)}")
                 
             if processou_original:
                 atualizar_ultima_data(id_pagina)
@@ -182,11 +199,11 @@ def processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, lis
         if not novalistaElementos:
             return total_processados
         
-        palavra_chave = list(filtros_base['banco']['palavraschave'].keys())[0].strip().lower()
+        palavras_chave = list(filtros_base['banco']['palavraschave'].keys())
+        palavra_chave = palavras_chave[0].replace("*", "").strip().lower() if palavras_chave else ""
         
         quantidade_para_processar, processa_mais_paginas, total_itens_tmp, processar_todos = calcular_quantidade_para_processar(
-            total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave
-        )
+            total_itens, registros, quantidade_para_processar, processar_dia, hora_atual, palavra_chave)
             
         error_timeout = 0
         try:
@@ -194,16 +211,15 @@ def processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, lis
                 total_processados += 1
                 print(f"PROCESSANDO N°: {total_processados} / TOTAL A SER PROCESSADO: {quantidade_para_processar}")
                 
-                edital, error_timeout= processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, 
-                    processar_dia,filtros_base, lock_editais, editais_em_processamento, error_timeout, lista_erros_api, termo_busca)
+                edital, error_timeout = processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual,
+                                                        processar_dia, filtros_base, lock_editais, editais_em_processamento, error_timeout, lista_erros_api, termo_busca)
 
         except Exception as e:
             logs.error(f"Erro no processamento: {e}\n")    
                 
         if processar_todos or processa_mais_paginas:
-            return processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, 
-                notificacao_config, filtros_base, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, 
-                lista_erros_api, termo_busca, id_plataforma, termo_original)
+            return processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processados, quantidade_para_processar, pagina, filtros, notificacao_config,
+                                                filtros_base, plataforma, processar_dia, hora_atual, id_pagina, ids_usuarios, total_itens_tmp, lista_erros_api, termo_busca, id_plataforma, termo_original)
         
         if termo_busca == termo_original:
             atualizar_heuristica(id_pagina, total_itens)
@@ -244,18 +260,17 @@ def processar_paginas_adicionais(driver, urlBase, palavra_chave, total_processad
         logs.info(f"Total Processados {termo_busca}: {total_processados}/ Total a processar {termo_busca}: {quantidade_para_processar}\n")
 
         while total_processados < quantidade_para_processar:
-            url = urlBase.replace('&pagina=1', f'&pagina={pagina}')
+            url = definir_pagina_pncp(urlBase, pagina)
             print(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
             logs.info(f"Iniciando processamento da palavra_chave: {termo_busca} na página: {pagina} url: {url}\n")
 
-            driver.get(url)
+            navegar_url_pncp(driver, url)
             listaElementos = []
             
             total_antes = total_processados
             
             total_processados = processar_pagina(driver, urlBase, filtros_base, id_pagina, ids_usuarios, listaElementos, plataforma, total_processados,
-                            quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config,
-                            total_itens_tmp,lista_erros_api, termo_busca, id_plataforma, termo_original)
+                                                 quantidade_para_processar, pagina, processar_dia, hora_atual, filtros, notificacao_config, total_itens_tmp, lista_erros_api, termo_busca, id_plataforma, termo_original)
             
             if total_processados == total_antes:
                 print(f"Sem avanço na página {pagina}. Encerrando para evitar looping.\n")

@@ -3,6 +3,7 @@
     "token_telegram_alterados": "6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
     "token_telegram_reserva_ignorada":"6307367776:AAHN9gnfqineWzGaU-eQGjw9-WavCjvG-G4",
     "dias_limpar_logs": 5,
+    "quantidade_revisao_buscas_adicionais": 20,
     "caminho_bkp": "C:/BOTGNP/bkp",
     "dias_intervalo_bkp": 5,
     "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",

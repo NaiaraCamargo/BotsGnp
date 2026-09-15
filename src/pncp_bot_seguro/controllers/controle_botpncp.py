@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from sys import argv
 import threading
 import time
@@ -86,23 +85,15 @@ def bot(plataforma: str, url: str = '', filtros: dict = {}, mostrar_browser: boo
                 time.sleep(5)
                 continue
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                for url_item, dados_url in urls.items():
-                    executor.submit(
-                        executar_url,
-                        url_item,
-                        dados_url,
-                        plataforma,
-                        filtros,
-                        mostrar_browser,
-                        data_inicial,
-                        data_final,
-                        format_data
-                    )
+            for url_item, dados_url in urls.items():
+                executar_url(url_item, dados_url, plataforma, filtros, mostrar_browser, data_inicial, data_final, format_data)
 
             execucoes += 1
             if not rodar_infinito:
                 break
+
+            print("Ciclo do Seguro concluído. Aguardando 5 segundos para iniciar novamente.")
+            time.sleep(5)
 
         except Exception as e:
             logs.exception("Erro no bot principal. Reiniciando em 10 segundos...")

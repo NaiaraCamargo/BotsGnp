@@ -8,22 +8,19 @@ from pncp_shared.config.controle_config import configuracoes
 from pncp_shared.utils.funcoespncp import cnpj_formatado
 
 
-def enviar_mensagem(msg, usuarios_notificar,  botGnp=False, botBool=False, erro = False):
+def enviar_mensagem(msg, usuarios_notificar, erro=False, destino=None):
+    usuarios_enviados = []
     try:
         link_edital = msg.get("Link", "sem_link") if isinstance(msg, dict) else "sem_link"
-        
+
         msg = formatar_mensagem(msg, erro)
 
-        token_enviar = configuracoes.get('token_telegram', "")
-        
-        usuarios_envio = usuarios_notificar.copy()
+        if destino == 'EDIT':
+           token_enviar = configuracoes.get('token_telegram_edit', "")
+        else:
+            token_enviar = configuracoes.get('token_telegram', "")
 
-        if not erro:
-            if not botGnp:
-                usuarios_envio.remove('-1002657878005') if '-1002657878005' in usuarios_envio else None
-
-            if not botBool:
-                usuarios_envio.remove('-1004295198662') if '-1004295198662' in usuarios_envio else None
+        usuarios_envio = list(usuarios_notificar or [])
        
         if msg  != "" and token_enviar != "":
             for usuario_notificar in usuarios_envio:
@@ -40,15 +37,18 @@ def enviar_mensagem(msg, usuarios_notificar,  botGnp=False, botBool=False, erro 
                             'disable_web_page_preview': True
                         }
 
-                        response = requests.post(url, data=payload)
+                        response = requests.post(url, data=payload, timeout=30)
                         
                         if response.status_code == 200:
-                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar} - edital: {link_edital}")
+                            sufixo_destino = f" - destino: {destino}" if destino else ""
+                            logs.info(f"Enviar Mensagem: Enviado para {usuario_notificar}{sufixo_destino} - edital: {link_edital}")
+                            usuarios_enviados.append(str(usuario_notificar))
+                            sleep(1)
+                            break
                         else:
                             logs.error(f"Erro no envio da mensagem para {usuario_notificar}. Código de status: {response.text}\n")
-
-                        sleep(1)
-                        break  # Envia a mensagem e sai do loop de tentativas
+                            if tentativa < tentativas - 1:
+                                sleep(2)
                     except Exception as ee:
                         if tentativa < tentativas - 1:
                             logs.warning(f"Tentativa {tentativa + 1} falhou. Tentando novamente...")
@@ -59,6 +59,8 @@ def enviar_mensagem(msg, usuarios_notificar,  botGnp=False, botBool=False, erro 
             logs.warning("Mensagem ou token de envio inválido.")
     except Exception as e:
         logs.error(f"Erro ao enviar a mensagem: {str(e)}")
+
+    return usuarios_enviados
         
 def formatar_mensagem(msg_dict, erro):
     try:
@@ -68,17 +70,29 @@ def formatar_mensagem(msg_dict, erro):
         if erro:
             nova_msg = "<b>=============================================================================================</b>\n"
             nova_msg += "\n"
-            nova_msg += "<b>POSSÍVEL ERRO NO SITE... EXTRAÇÃO DE MAIS DE 3 LINKS COM TIMEOUT. NÃO SERÁ MAIS PROCESSADO NENHUM EDITAL!</b>\n"
+            tentativas_timeout = msg_dict.get("tentativas_timeout")
+            tempo_espera_minutos = msg_dict.get("tempo_espera_minutos")
+            link_timeout = msg_dict.get("Link")
+
+            if tentativas_timeout:
+                nova_msg += f"<b>POSSÍVEL ERRO NO SITE: O MESMO LINK FALHOU EM {html.escape(str(tentativas_timeout))} TENTATIVAS.</b>\n"
+                if link_timeout:
+                    nova_msg += f"<b>LINK:</b> <code>{html.escape(str(link_timeout))}</code>\n"
+            else:
+                nova_msg += "<b>POSSÍVEL ERRO NO SITE... EXTRAÇÃO DE MAIS DE 3 LINKS COM TIMEOUT. NÃO SERÁ MAIS PROCESSADO NENHUM EDITAL!</b>\n"
+
             nova_msg += "\n"
             palavra_chave_timeout = msg_dict.get("palavra_chave_timeout")
             if palavra_chave_timeout:
                 nova_msg += f"<b>PALAVRA-CHAVE:</b> <code>{html.escape(str(palavra_chave_timeout))}</code>\n"
                 nova_msg += "\n"
-            nova_msg += "<b>AGUARDANDO 5 MINUTOS PARA NOVA TENTATIVA ... </b>\n"
+            nova_msg += f"<b>AGUARDANDO {html.escape(str(tempo_espera_minutos or 5))} MINUTOS PARA NOVA TENTATIVA...</b>\n"
             nova_msg += "\n"
             nova_msg += "<b>=============================================================================================</b>"
             return html.unescape(nova_msg.strip())
 
+
+        nova_msg = "\n"
 
         # Identificação do tipo de alteração
         if any(key.startswith("status_processo") for key in msg_dict):
@@ -92,7 +106,13 @@ def formatar_mensagem(msg_dict, erro):
             elif 'status_processo_itens' in msg_dict:
                 nova_msg += "<b>NOVOS ITENS ENCONTRADOS</b>\n"
 
-        nova_msg = "\n"
+        valor_total_homologado = msg_dict.get("ValorTotalHomologado")
+        if valor_total_homologado is not None and str(valor_total_homologado).strip() != "":
+            nova_msg = "<b>PROCESSO ENCERRADO!!!</b>\n"
+            nova_msg += "\n"
+            nova_msg += f"<b>VALOR TOTAL HOMOLOGADO</b> <code>{html.escape(str(valor_total_homologado))}</code>\n"
+            nova_msg += "\n"
+
         # Situações
         if "Situacao" in msg_dict:
             nova_msg += f"<b>SITUAÇÃO:</b> <code>{html.escape(str(msg_dict['Situacao']))}</code>\n"

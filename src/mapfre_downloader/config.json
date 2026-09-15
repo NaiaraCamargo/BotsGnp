@@ -3,6 +3,8 @@
     "aba_excel": "COM DADOS",
     "mostrar_browser": false,
     "tempo_de_login": 300,
+    "tempo_recarregar_config": 900,
+    "salvar_planilha_a_cada": 10,
     "caminho_bkp": "C:/BOTGNP/bkp",
     "dias_intervalo_bkp": 2,
     "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
