@@ -167,6 +167,11 @@ def formatar_mensagem(msg_dict, erro):
         if "ValorTotalEstimadoCompra" in msg_dict:
             nova_msg += f"<b>VALOR ESTIMADO:</b> <code>{html.escape(str(msg_dict['ValorTotalEstimadoCompra']))}</code>\n\n"
 
+        if msg_dict.get("FontesOrcamentarias"):
+            nova_msg += f"<b>FONTES ORÇAMENTÁRIAS:</b> <code>{html.escape(str(msg_dict['FontesOrcamentarias']))}</code>\n\n"
+        if msg_dict.get("fonte_plataforma"):
+            nova_msg += f"<b>FONTE/PLATAFORMA:</b> <code>{html.escape(str(msg_dict['fonte_plataforma']))}</code>\n\n"
+
         # Links
         if "Link" in msg_dict:
             nova_msg += f"<b>Link:</b> {html.escape(str(msg_dict['Link']))}\n\n"

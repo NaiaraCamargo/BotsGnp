@@ -167,6 +167,8 @@ def montar_novos_campos(compra: dict, qtd, link, palavras_destacadas):
             "HoraFim": hora_fim,
             "ValorTotalEstimadoCompra": formatar_valor_sigilo(compra.get("valorTotalEstimado")),
             "LinkBotao": compra.get("linkSistemaOrigem"), 
+            "FontesOrcamentarias": ", ".join(fonte["nome"] for fonte in (compra.get("fontesOrcamentarias") or []) if fonte.get("nome")),
+            "fonte_plataforma": compra.get("usuarioNome") or "",
             "QuantidadeItens": qtd
         }
         
