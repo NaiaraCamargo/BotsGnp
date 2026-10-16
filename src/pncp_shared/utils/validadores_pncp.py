@@ -49,7 +49,7 @@ def validar_perfil_valid(texto=None, itens=None, filtros_base=None):
     return bool(_encontrar_valids(textos, regras))
 
 def validar_modalidade_obras (texto):
-    modalidade = extrair_texto(texto, 'Modalidade da Contratação: ')
+    modalidade = extrair_texto(texto, 'Modalidade de Contratação: ')
     if modalidade not in ("Concorrência - Eletrônica", "Concorrência - Presencial", "Pregão - Eletrônico",
                             "Pregão - Presencial", "Dispensa", "Dispensa - Eletrônica"):
         return False
