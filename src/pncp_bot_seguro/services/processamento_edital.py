@@ -132,11 +132,11 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
         elif id_busca is None:
             enviar_mensagem(edital, ids_usuarios)
             
-        arquivos = buscar_arquivos(cnpj, ano, numero, link)
-        if not arquivos:
-            logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
-        else:  
-            salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
+        #arquivos = buscar_arquivos(cnpj, ano, numero, link)
+        #if not arquivos:
+            #logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
+        #else:
+            #salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
         
         id_processo = gravar_novo_processo(edital, plataforma)
 

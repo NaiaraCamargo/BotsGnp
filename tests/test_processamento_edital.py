@@ -37,7 +37,7 @@ class ProcessarEditalTest(unittest.TestCase):
             resultado = processamento_edital.processar_edital(edital, [], 0, [], filtros, "obra", [], {"GNP"}, [])
 
         self.assertIs(resultado[0], edital)
-        buscar_arquivos.assert_called_once()
+        buscar_arquivos.assert_not_called()
         gravar_novo_processo.assert_called_once()
 
     def test_tratar_timeout_envia_com_token_de_cada_destino_e_aguarda_tres_minutos(self):

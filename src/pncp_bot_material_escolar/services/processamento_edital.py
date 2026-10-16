@@ -110,11 +110,11 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
         if edital["Uf"].upper() == "RS":
             enviar_mensagem(edital, ids_usuarios)
             
-        arquivos = buscar_arquivos(cnpj, ano, numero, link)
-        if not arquivos:
-            logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
-        else:  
-            salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
+        ##arquivos = buscar_arquivos(cnpj, ano, numero, link)
+        ##if not arquivos:
+            ##logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
+        ##else:
+            ##salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
         
         gravar_novo_processo(edital)
         return edital, 0
