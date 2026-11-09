@@ -152,6 +152,21 @@ py -m PyInstaller src/pncp_bot_seguro/bots/bot_pncp_seguro.py --onefile --paths 
 
 ### Mapfre
 
+O bot processa ate tres reservas simultaneamente, cada uma em um navegador independente
+do Chrome, compartilhando o mesmo login por cookies. No `config.json` da Mapfre,
+use `"links_simultaneos": 3` (padrao).
+Para reduzir a concorrencia, use `1` ou `2` e reinicie o bot. Execute uma unica
+instancia do bot para cada planilha; a propria instancia coordena os tres acessos
+e centraliza a gravacao do Excel. Reservas repetidas sao processadas em sequencia,
+com o resultado registrado na linha de origem. O coordenador faz um unico login
+e copia os cookies para os demais navegadores. Ao atingir `tempo_de_login`, deixa
+as reservas em andamento terminarem, renova o login uma vez e compartilha os novos
+cookies. A recuperacao de um navegador reutiliza o login atual.
+
+O console e o log mostram o ritmo de reservas por hora e a estimativa restante.
+A velocidade depende do portal, da rede e da maquina. Confirme durante a primeira
+execucao se o portal aceita a autenticacao compartilhada entre os tres navegadores.
+
 ```powershell
 py -m PyInstaller src/mapfre_downloader/bots/bot_mapfre.py --onefile --paths src --hidden-import selenium.webdriver.chrome.webdriver --hidden-import selenium.webdriver.chrome.service --hidden-import selenium.webdriver.chrome.options
 ```

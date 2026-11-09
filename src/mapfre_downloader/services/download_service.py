@@ -802,13 +802,13 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         
         orgao_campo = WebDriverWait(driver_mapfre, 20).until(EC.presence_of_element_located((By.NAME, "cliente")))
         orgao = orgao_campo.get_attribute("value")
-        pasta_reserva = obter_pasta_reserva(reserva, id_reserva, orgao)
         
         if not arquivos_grid:
             msg = "\nNenhum arquivo encontrado na grid grdDocs"
             logs.info(msg)
             return 0, 0, orgao, url_arquivo, True, msg
 
+        pasta_reserva = obter_pasta_reserva(reserva, id_reserva, orgao)
         arquivos_baixados = carregar_arquivos_do_zip_existente(pasta_reserva, id_reserva, orgao)
         erros_download = []
         aba_principal = driver_mapfre.current_window_handle

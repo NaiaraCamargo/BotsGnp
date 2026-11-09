@@ -87,7 +87,7 @@ def ler_links_excel(caminho_excel):
         reservas = []
         premios_por_reserva = carregar_premios_por_reserva(caminho_excel)
 
-        for _, linha in df.iterrows():
+        for linha_excel, (_, linha) in enumerate(df.iterrows(), start=2):
             processados = normalizar_texto(linha.get("PROCESSADO", "")).upper()
 
             if processados == "OK":
@@ -102,6 +102,7 @@ def ler_links_excel(caminho_excel):
                 premio = premios_por_reserva.get(reserva_normalizada, 0)
             
             reservas.append({
+                "linha_excel": linha_excel,
                 "reserva": reserva_normalizada,
                 "ramo": normalizar_texto(ramo),
                 "premio": 0 if pd.isna(premio) else premio
@@ -201,7 +202,7 @@ def criar_backup_excel(caminho_excel, max_backups=3):
         logs.error(f"\nERRO ao criar backup da planilha: {ex}")
         return ""
 
-def atualizar_planilha(quantidade_arquivos, quantidade_baixado, orgao, link, caminho_excel, id_reserva, processou, msg):
+def atualizar_planilha(quantidade_arquivos, quantidade_baixado, orgao, link, caminho_excel, id_reserva, processou, msg, linha_excel=None):
     try:
         print("\nIniciado processo de atualização da planilha")
         caminho_excel = normalizar_texto(caminho_excel)
@@ -222,10 +223,13 @@ def atualizar_planilha(quantidade_arquivos, quantidade_baixado, orgao, link, cam
             processado = "ERRO"
             
         id_reserva_normalizado = normalizar_texto(id_reserva).replace(".0", "")
-        linhas_encontradas = estado["linhas_reserva"].get(id_reserva_normalizado)
+        linhas_encontradas = linha_excel if linha_excel is not None else estado["linhas_reserva"].get(id_reserva_normalizado)
             
         if linhas_encontradas is None:
             raise ValueError(f"\nReserva {id_reserva} não encontrada no Excel.")
+        reserva_na_linha = normalizar_texto(ws.cell(row=linhas_encontradas, column=colunas["reserva"]).value).replace(".0", "")
+        if reserva_na_linha != id_reserva_normalizado:
+            raise ValueError(f"Reserva {id_reserva} nao corresponde a linha {linhas_encontradas} do Excel.")
          
         print(f"Atualizando reserva numero {id_reserva_normalizado} na linha {linhas_encontradas} msg bot {msg}")
 
