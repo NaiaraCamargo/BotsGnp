@@ -34,8 +34,9 @@ class _SessaoMapfre:
 
     def processar(self, indice, total, reserva, cookies_login):
         id_reserva = reserva.get("reserva", "")
-        logs.info("Sessao %s - Iniciando reserva %s/%s: %s", self.numero, indice, total, id_reserva)
-        print(f"\nSessao {self.numero} - Iniciando reserva {indice}/{total}: {id_reserva}")
+        mensagem_inicio = f"Sessao {self.numero} - Iniciando reserva {indice}/{total} | ID reserva: {id_reserva}"
+        logs.info(mensagem_inicio)
+        print(f"\n{mensagem_inicio}")
         try:
             driver_disponivel = False
             if self.driver:
@@ -158,8 +159,9 @@ def executar_bot_mapfre():
                     ritmo = concluidas / horas
                     restantes_horas = (len(reservas) - concluidas) / ritmo
                     progresso = f"Concluidas {concluidas}/{len(reservas)} | {ritmo:.1f} reservas/h | Restante estimado: {restantes_horas:.1f} h"
-                    logs.info("Sessao %s - Reserva %s/%s finalizada. %s", sessao.numero, indice, len(reservas), progresso)
-                    print(progresso)
+                    mensagem_final = f"Sessao {sessao.numero} - Reserva {indice}/{len(reservas)} finalizada | ID reserva: {reserva.get('reserva', '')} | {progresso}"
+                    logs.info(mensagem_final)
+                    print(mensagem_final)
 
         logs.info("Bot Mapfre finalizado.")
     except Exception as ex:
