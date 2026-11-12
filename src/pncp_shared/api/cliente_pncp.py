@@ -116,9 +116,11 @@ def _reservar_inicio_global():
         with _abrir_arquivo_bloqueado() as arquivo:
             estado = _ler_estado(arquivo)
             agora = time.time()
-            espera_intervalo = INTERVALO_MINIMO_SEG - (agora - estado["ultima_chamada"])
+            # Intervalo minimo desativado temporariamente para teste.
+            # espera_intervalo = INTERVALO_MINIMO_SEG - (agora - estado["ultima_chamada"])
             espera_bloqueio = estado["bloqueado_ate"] - agora
-            espera = max(0, espera_intervalo, espera_bloqueio)
+            # espera = max(0, espera_intervalo, espera_bloqueio)
+            espera = max(0, espera_bloqueio)
 
             if espera <= 0:
                 estado["ultima_chamada"] = time.time()

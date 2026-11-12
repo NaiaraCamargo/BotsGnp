@@ -1,11 +1,9 @@
 from datetime import datetime
 import time
 
-from pncp_bot_obra.api.api_edital import (
-    montar_novos_campos, 
-    montar_itens_campos
-)
-from pncp_shared.api.compras_pncp import tentar_buscar_compra
+from pncp_shared.api.api_edital import montar_itens_campos
+from pncp_shared.api.compras_pncp import tentar_buscar_itens, adicionar_erro_url, complementar_edital
+from pncp_shared.utils.edital_texto import extrair_dados_edital, TextoEditalIncompleto
 from pncp_shared.api.api_arquivos import (
     buscar_arquivos, 
     salvar_arquivos_api
@@ -26,7 +24,6 @@ from pncp_shared.utils.validadores_pncp import (
     validar_palavras,
     validar_perfil_valid,
     extrair_chaves_do_link,
-    extrair_texto,
 )
 from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
@@ -64,9 +61,10 @@ def atualizar_termo_existente(edital_existente, termo_busca):
     atualizar_termos_edital(edital_existente["id"], novos_termos)
 
 
-def enviar_para_destinos(edital, id_processo, destinos, destinatarios):
+def enviar_para_destinos(edital, id_processo, destinos, destinatarios, resultados=None):
     chats_ja_enviados = set()
     destinos_enviados = set()
+    resultados = resultados if resultados is not None else []
 
     for destino in sorted(destinos):
         chats_destino = destinatarios_por_destino(destinatarios, destino)
@@ -74,7 +72,7 @@ def enviar_para_destinos(edital, id_processo, destinos, destinatarios):
 
         if 'EDIT' in destino and edital["Uf"].upper() != "RS" and edital["Uf"].upper() != "SC":
             print(f"[IGNORADO - DESTINO EDIT DIFERENTE DE RS/SC] {destino} - {edital.get('Link')}")
-            registrar_resultado_envio_bot(id_processo, destino, "ignorado", "Destino EDIT diferente de RS/SC ignorado")
+            resultados.append((destino, "ignorado", "Destino EDIT diferente de RS/SC ignorado"))
             continue
 
         enviados_agora = enviar_mensagem(edital, chats_novos, destino=destino) if chats_novos else []
@@ -82,12 +80,15 @@ def enviar_para_destinos(edital, id_processo, destinos, destinatarios):
         chats_ja_enviados.update(str(chat) for chat in enviados_agora)
         destino_entregue = bool(set(chats_destino) & chats_ja_enviados)
 
-        registrar_resultado_envio_bot(id_processo, destino, "enviado" if destino_entregue else "erro",
-                                      "" if destino_entregue else "Nenhum destinatario do destino recebeu a mensagem")
+        resultados.append((destino, "enviado" if destino_entregue else "erro",
+                           "" if destino_entregue else "Nenhum destinatario do destino recebeu a mensagem"))
 
         if destino_entregue:
             destinos_enviados.add(destino)
 
+    if id_processo:
+        for destino, status, erro in resultados:
+            registrar_resultado_envio_bot(id_processo, destino, status, erro)
     return destinos_enviados
 
 def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtros_base, lock_editais, 
@@ -104,7 +105,16 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
         logs.error("[PAGINA SEM DESTINO] id_page=%s termo=%s", id_pagina, termo_busca)
         return None, error_timeout
 
-    edital = extrair_link(texto, urlBase)
+    try:
+        edital = extrair_dados_edital(texto, palavras_destacadas=palavras_destacadas)
+    except TextoEditalIncompleto as erro:
+        adicionar_erro_url(lista_erros_api, urlBase, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=erro)
+        logs.error('Texto do edital incompleto: %s', erro)
+        return None, error_timeout
+    except Exception as erro:
+        logs.error('Erro ao consultar complementos do edital: %s', erro, exc_info=True)
+        return None, error_timeout
+
     link = edital.get("Link", "").strip()
 
     with lock_editais:
@@ -117,7 +127,7 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
         palavras_limpa = [p.strip("'\"") for p in palavras_destacadas if p.strip("'\"")]
 
         edital.update({
-            "palavras_chave": palavras_limpa if palavras_limpa else "",
+            "palavras_chave": palavras_limpa or "",
             "termo_busca": termo_busca,
             "id_pagina": id_pagina,
             "notificar_retorno": True,
@@ -137,16 +147,20 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
                 if termo_ja_existe(termos_existentes, termo_busca):
                     destinos_processados = retornar_destinos_processados(edital_existente.get("id"))
                     if destinos_pagina.issubset(destinos_processados):
-                        print(f"EDITAL COM TERMO JA PROCESSADO: {link}")
+                        print(f"\nEDITAL COM TERMO JA PROCESSADO: {link}\n")
                         logs.info("Edital com termo ja processado: %s - %s - %s", edital_existente.get("id"), link, termo_busca)
                         return None, error_timeout
                 else:
                     atualizar_termo_existente(edital_existente, termo_busca)
 
+            id_processo_existente = edital_existente.get('id') if edital_existente else None
             edital, error_timeout = processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base,
-                                                     plataforma, lista_erros_api, destinos_pagina, destinatarios)
+                                                     plataforma, lista_erros_api, destinos_pagina, destinatarios, id_processo_existente)
 
-        return edital, error_timeout
+            return edital, error_timeout
+    except TextoEditalIncompleto as e:
+        adicionar_erro_url(lista_erros_api, link, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=e, link_origem=link)
+        logs.error('Texto do edital incompleto: %s - %s', link, e)
     except Exception as e:
         logs.error(f"[ERRO AO PROCESSAR TEXTO] {link} - {e}", exc_info=True)
     finally:
@@ -156,7 +170,8 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
     return None, error_timeout
 
 
-def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base, plataforma, lista_erros_api,destinos_pagina, destinatarios,):
+def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, filtros_base, plataforma, lista_erros_api,
+                     destinos_pagina, destinatarios, id_processo_existente=None):
     try:    
         link = edital["Link"]
         chaves = extrair_chaves_do_link(link)
@@ -168,9 +183,9 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         cnpj, ano, numero = chaves
         
-        compra, qtd_items, itens, falhou_por_timeout = tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
+        qtd_items, itens, falhou_por_timeout = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
-        if compra is None:
+        if qtd_items is None:
             if falhou_por_timeout:
                 return tratar_timeout(edital, error_timeout, destinos_pagina, destinatarios, tentativas=3)
             
@@ -178,35 +193,41 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         error_timeout = 0
            
-        novos_dados = montar_novos_campos(compra, qtd_items, link, palavras_destacadas)
+        edital["QuantidadeItens"] = qtd_items
         
         itens_dados = montar_itens_campos(link, itens or [])
         edital["itens_dados"] = itens_dados
         
         palavra_chave_item = validar_palavras(itens=itens_dados, filtros_base=filtros_base)
-        edit_valido = validar_perfil_valid(texto=compra.get("objetoCompra", ""), itens=itens_dados, filtros_base=filtros_base)
+        edit_valido = validar_perfil_valid(texto=edital.get("Descricao", "").replace("<b>", "").replace("</b>", ""), itens=itens_dados, filtros_base=filtros_base)
         codigo_executor = str(filtros_base.get("banco", {}).get("codigo_executor") or "").strip().upper()
 
         if codigo_executor == "EDIT" and not palavras_destacadas and not palavra_chave_item and not edit_valido:
             print(" NENHUMA PALAVRA CHAVE ENCONTRADA NO OBJETO E NOS ITENS\n")
             return None, error_timeout
 
-        edital.update(novos_dados)
 
         destinos_aprovados = calcular_destinos_aprovados(edital, destinos_pagina, edit_valido=edit_valido)
-        
-        pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
-        edital["pasta_download"] = pasta_killer
-        edital["pasta_comprimidos"] = pasta_comprimidos
+
+        ##pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
+        ##edital["pasta_download"] = pasta_killer
+        ##edital["pasta_comprimidos"] = pasta_comprimidos
         
         edital_print = {k: v for k, v in edital.items() if k != "itens_dados" and  k != "itens_validos"}
         print(f"\nProcessando: {edital_print}\n")   
+
+        destinos_ja_enviados = retornar_destinos_enviados(id_processo_existente) if id_processo_existente else set()
+        destinos_pendentes = destinos_aprovados - destinos_ja_enviados
+        resultados_envio = []
+        destinos_enviados = enviar_para_destinos(edital, None, destinos_pendentes, destinatarios, resultados=resultados_envio)
+
+        complementar_edital(edital, cnpj, ano, numero, lista_erros_api)
  
-        arquivos = buscar_arquivos(cnpj, ano, numero, link)
-        if not arquivos:
-            logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
-        else:  
-            salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
+        ##arquivos = buscar_arquivos(cnpj, ano, numero, link)
+        ##if not arquivos:
+            ##logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
+        ##else:  
+            ##salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
         
         id_processo = gravar_novo_processo(edital)
 
@@ -214,13 +235,11 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
             logs.error(f"[PROCESSO SEM ID] Nao foi possivel registrar os envios: {link}")
             return edital, 0
 
-        destinos_ja_enviados = retornar_destinos_enviados(id_processo)
-        destinos_pendentes = destinos_aprovados - destinos_ja_enviados
-
         for destino in destinos_pagina - destinos_aprovados - destinos_ja_enviados:
             registrar_resultado_envio_bot(id_processo, destino, "ignorado")
 
-        destinos_enviados = enviar_para_destinos(edital, id_processo, destinos_pendentes, destinatarios)
+        for destino, status, erro in resultados_envio:
+            registrar_resultado_envio_bot(id_processo, destino, status, erro)
 
         if "BOOL" in destinos_enviados:
             gravar_processo_botbool_envio(id_processo)
@@ -251,11 +270,3 @@ def tratar_timeout(edital, error_timeout, destinos, destinatarios, tentativas=3)
     
     return None, 0  
 
-
-def extrair_link(texto, urlBase):
-    id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
-    
-    return {
-        'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
-    }
-    

@@ -8,10 +8,9 @@ class ProcessarEditalTest(unittest.TestCase):
     def test_sem_palavra_no_objeto_nem_nos_itens_interrompe_antes_de_salvar(self):
         edital = {"Link": "https://pncp.gov.br/app/editais/12345678901234/2026/1"}
         filtros = {"banco": {"codigo_executor": "EDIT", "palavraschave": {"asfalto*": {"exceptions": [], "valid": ["CONCRETO"]}}}}
-        compra = {"objetoCompra": "Aquisicao de materiais administrativos"}
+        edital['Descricao'] = 'Aquisicao de materiais administrativos'
 
-        with patch.object(processamento_edital, "tentar_buscar_compra", return_value=(compra, 0, [], False)), \
-             patch.object(processamento_edital, "montar_novos_campos", return_value={}), \
+        with patch.object(processamento_edital, "tentar_buscar_itens", return_value=(0, [], False)), \
              patch.object(processamento_edital, "montar_itens_campos", return_value=[]), \
              patch.object(processamento_edital, "buscar_arquivos") as buscar_arquivos, \
              patch.object(processamento_edital, "gravar_novo_processo") as gravar_novo_processo:
@@ -24,13 +23,13 @@ class ProcessarEditalTest(unittest.TestCase):
     def test_gnp_sem_palavra_nao_entra_no_bloqueio_exclusivo_do_edit(self):
         edital = {"Link": "https://pncp.gov.br/app/editais/12345678901234/2026/1"}
         filtros = {"banco": {"codigo_executor": "GNP", "palavraschave": {"asfalto*": {"exceptions": [], "valid": ["CONCRETO"]}}}}
-        compra = {"objetoCompra": "Aquisicao de materiais administrativos"}
+        edital.update(Descricao='Aquisicao de materiais administrativos', Uf='RS', ValorTotalEstimadoCompra='0')
 
-        with patch.object(processamento_edital, "tentar_buscar_compra", return_value=(compra, 0, [], False)), \
-             patch.object(processamento_edital, "montar_novos_campos", return_value={"Uf": "RS", "ValorTotalEstimadoCompra": "0"}), \
+        with patch.object(processamento_edital, "tentar_buscar_itens", return_value=(0, [], False)), \
              patch.object(processamento_edital, "montar_itens_campos", return_value=[]), \
              patch.object(processamento_edital, "obter_pastas_download", return_value=("pasta", "comprimidos")), \
              patch.object(processamento_edital, "buscar_arquivos", return_value=[]) as buscar_arquivos, \
+             patch.object(processamento_edital, "complementar_edital"), \
              patch.object(processamento_edital, "gravar_novo_processo", return_value="processo") as gravar_novo_processo, \
              patch.object(processamento_edital, "retornar_destinos_enviados", return_value=set()), \
              patch.object(processamento_edital, "enviar_para_destinos", return_value={"GNP"}):

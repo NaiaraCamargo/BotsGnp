@@ -4,6 +4,7 @@ from datetime import datetime
 import requests
 
 from pncp_shared.api.cliente_pncp import requisicao_pncp
+from pncp_shared.api.api_edital import montar_complementos_compra
 from pncp_shared.logs.controle_logs import logs
 
 
@@ -127,67 +128,58 @@ def get_int(url, params=None, timeout=60, lista_erros_api=None, link_origem=None
     return 0
 
 
-def buscar_compra_e_itens(cnpj, ano, sequencial, link, timeout=60, lista_erros_api=None, max_tentativas=3):
+def complementar_edital(edital, cnpj, ano, sequencial, lista_erros_api=None, timeout=60, max_tentativas=3):
+    """Falhas da consulta sao registradas e nao impedem a gravacao do edital com seus itens."""
+    url = f'{CONSULTA}/orgaos/{cnpj}/compras/{ano}/{sequencial}'
+    erros = lista_erros_api if lista_erros_api is not None else []
+    indice_inicial = len(erros)
     try:
-        compra_url = f"{CONSULTA}/orgaos/{cnpj}/compras/{ano}/{sequencial}"
-        compra = get_json(
-            compra_url,
-            timeout=timeout,
-            lista_erros_api=lista_erros_api,
-            link_origem=link, max_tentativas=max_tentativas,
-        )
-
-        if not isinstance(compra, dict):
-            return None, 0, []
-
-        qtd_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens/quantidade"
-        indice_erros_qtd = len(lista_erros_api) if lista_erros_api is not None else 0
-        qtd = get_int(qtd_url, timeout=timeout, lista_erros_api=lista_erros_api, link_origem=link, max_tentativas=max_tentativas)
-
-        if lista_erros_api is not None and len(lista_erros_api) > indice_erros_qtd:
-            return None, 0, []
-
-        if not isinstance(qtd, int) or qtd <= 0:
-            return compra, 0, []
-
-        itens_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens"
-        itens = []
-        total_paginas = (qtd + TAMANHO_PAGINA_ITENS - 1) // TAMANHO_PAGINA_ITENS
-
-        for pagina in range(1, total_paginas + 1):
-            itens_resposta = get_json(
-                itens_url,
-                params={"pagina": pagina, "tamanhoPagina": TAMANHO_PAGINA_ITENS},
-                timeout=timeout,
-                lista_erros_api=lista_erros_api,
-                link_origem=link, max_tentativas=max_tentativas,
-            )
-
-            if isinstance(itens_resposta, dict):
-                itens_pagina = itens_resposta.get("data") or []
-            elif isinstance(itens_resposta, list):
-                itens_pagina = itens_resposta
-            else:
-                return None, 0, []
-
-            itens.extend(itens_pagina)
-            if len(itens_pagina) < TAMANHO_PAGINA_ITENS:
-                break
-
-        return compra, qtd, itens
-
+        compra = get_json(url, timeout=timeout, lista_erros_api=erros, link_origem=edital['Link'], max_tentativas=max_tentativas)
+        if compra is None and len(erros) > indice_inicial:
+            return edital
+        if not isinstance(compra, dict) or not compra:
+            raise ValueError('Resposta da consulta de compra invalida ou vazia.')
+        edital.update(montar_complementos_compra(compra, edital))
     except Exception as erro:
-        logs.error(f"[ERRO AO BUSCAR CAMPOS API] {link} - {erro}", exc_info=True)
-        return None, 0, []
+        logs.error('[ERRO AO COMPLEMENTAR EDITAL API] %s - %s', edital.get('Link'), erro, exc_info=True)
+        adicionar_erro_url(erros, url, tipo_erro='COMPLEMENTOS_EDITAL_INVALIDOS', mensagem=erro, link_origem=edital.get('Link'))
+    return edital
 
 
-def tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3):
-    indice_erros_antes = len(lista_erros_api) if lista_erros_api is not None else 0
-    compra, qtd_items, itens = buscar_compra_e_itens(cnpj, ano, numero, link, lista_erros_api=lista_erros_api, max_tentativas=max_tentativas)
+def buscar_itens(cnpj, ano, sequencial, link, timeout=60, lista_erros_api=None, max_tentativas=3):
+    erros = lista_erros_api if lista_erros_api is not None else []
+    itens_url = f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens"
+    try:
+        indice_inicial = len(erros)
+        qtd = get_int(f"{itens_url}/quantidade", timeout=timeout, lista_erros_api=erros, link_origem=link, max_tentativas=max_tentativas)
+        if len(erros) > indice_inicial:
+            return None, []
+        if not isinstance(qtd, int) or isinstance(qtd, bool) or qtd < 0:
+            raise ValueError('Quantidade de itens invalida.')
+        itens = []
+        for pagina in range(1, (qtd + TAMANHO_PAGINA_ITENS - 1) // TAMANHO_PAGINA_ITENS + 1):
+            resposta = get_json(itens_url, params={'pagina': pagina, 'tamanhoPagina': TAMANHO_PAGINA_ITENS},
+                                timeout=timeout, lista_erros_api=erros, link_origem=link, max_tentativas=max_tentativas)
+            if resposta is None and len(erros) > indice_inicial:
+                return None, []
+            itens_pagina = resposta.get('data') if isinstance(resposta, dict) else resposta
+            if not isinstance(itens_pagina, list) or not all(isinstance(item, dict) for item in itens_pagina):
+                raise ValueError(f'Resposta de itens invalida na pagina {pagina}.')
+            itens.extend(itens_pagina)
+        if len(itens) != qtd:
+            raise ValueError(f'Itens incompletos: esperado={qtd}, recebido={len(itens)}.')
+        numeros = [item.get('numeroItem') for item in itens]
+        if any(numero is None for numero in numeros) or len(set(numeros)) != qtd:
+            raise ValueError('Itens sem identificador ou duplicados na paginacao.')
+        return qtd, itens
+    except Exception as erro:
+        logs.error(f'[ERRO AO BUSCAR ITENS API] {link} - {erro}', exc_info=True)
+        adicionar_erro_url(erros, itens_url, tipo_erro='ITENS_INCOMPLETOS', mensagem=erro, link_origem=link)
+        return None, []
 
-    if isinstance(compra, dict):
-        return compra, qtd_items, itens, False
 
-    falhou_apos_retentar = houve_erro_retentavel(lista_erros_api, indice_erros_antes)
-    print(f"[ERRO API] {max_tentativas} tentativas esgotadas para o edital: {link}" if falhou_apos_retentar else f"[ERRO API] Erro não permite nova tentativa: {link}")
-    return None, None, None, falhou_apos_retentar
+def tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3):
+    erros = lista_erros_api if lista_erros_api is not None else []
+    indice_inicial = len(erros)
+    quantidade, itens = buscar_itens(cnpj, ano, numero, link, lista_erros_api=erros, max_tentativas=max_tentativas)
+    return quantidade, itens, quantidade is None and houve_erro_retentavel(erros, indice_inicial)

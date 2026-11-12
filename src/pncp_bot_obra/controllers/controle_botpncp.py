@@ -133,7 +133,7 @@ def executar_url(url: str, dados_url: dict, plataforma: str, filtros: dict, most
         q = ""
         
     q = re.sub(r"\s+", "_", q)
-    palavra_chave = (q + '*') if q else ''
+    palavra_chave = f'{q}*' if q else ''
             
     filtros_locais = {
         'banco': {
@@ -272,8 +272,9 @@ async def bot_async(plataforma: str, codigo_executor: str = "GNP", filtros: dict
             if not rodar_infinito:
                 break
             
-            print(f"[{worker_id}] aguardando {intervalo_sucesso_seg}s antes do próximo job...")
-            await asyncio.sleep(intervalo_sucesso_seg)
+            # Pausa entre jobs desativada temporariamente para teste.
+            # print(f"[{worker_id}] aguardando {intervalo_sucesso_seg}s antes do próximo job...")
+            # await asyncio.sleep(intervalo_sucesso_seg)
 
         except Exception:
             logs.exception(f"[{worker_id}] erro no loop principal; reiniciando em 10s...")

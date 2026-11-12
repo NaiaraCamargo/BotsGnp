@@ -3,7 +3,8 @@ from threading import Lock
 import time
 
 from pncp_shared.api.api_arquivos import buscar_arquivos, salvar_arquivos_api
-from pncp_shared.api.compras_pncp import tentar_buscar_compra
+from pncp_shared.api.compras_pncp import tentar_buscar_itens, adicionar_erro_url, complementar_edital
+from pncp_shared.utils.edital_texto import extrair_dados_edital, TextoEditalIncompleto
 from pncp_shared.utils.funcoespncp import obter_pastas_download
 from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
@@ -16,12 +17,8 @@ from pncp_shared.database.repositoriopncp import (
 from pncp_shared.utils.validadores_pncp import (
     validar_texto_seguro,
     extrair_chaves_do_link,
-    extrair_texto,
 )
-from pncp_bot_seguro.api.api_edital import (
-    montar_novos_campos, 
-    montar_itens_campos
-)
+from pncp_shared.api.api_edital import montar_itens_campos
 
 INTERVALO_ALERTA_TIMEOUT_SEG = 180
 _lock_alertas_timeout = Lock()
@@ -36,7 +33,15 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
         print("NENHUMA PALAVRA CHAVE ENCONTRADA")
         return None, error_timeout
 
-    edital = extrair_link(texto, urlBase)
+    try:
+        edital = extrair_dados_edital(texto, palavras_destacadas=palavras_destacadas, incluir_homologado=True)
+    except TextoEditalIncompleto as erro:
+        adicionar_erro_url(lista_erros_api, urlBase, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=erro)
+        logs.error('Texto do edital incompleto: %s', erro)
+        return None, error_timeout
+    except Exception as erro:
+        logs.error('Erro ao consultar complementos do edital: %s', erro, exc_info=True)
+        return None, error_timeout
     link = edital.get("Link", "").strip()
 
     with lock_editais:
@@ -75,6 +80,9 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
             lista_erros_api, id_busca, id_processo_existente, destinatarios_filtro)
 
         return edital, error_timeout
+    except TextoEditalIncompleto as e:
+        adicionar_erro_url(lista_erros_api, link, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=e, link_origem=link)
+        logs.error('Texto do edital incompleto: %s - %s', link, e)
     except Exception as e:
         logs.error(f"[ERRO AO PROCESSAR TEXTO] {link} - {e}")
     finally:
@@ -97,9 +105,9 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         cnpj, ano, numero = chaves
         
-        compra, qtd_items, itens, falhou_por_timeout  = tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api)
+        qtd_items, itens, falhou_por_timeout = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
-        if compra is None:
+        if qtd_items is None:
             if falhou_por_timeout:
                 return tratar_timeout(edital, error_timeout, ids_usuarios)
             
@@ -107,36 +115,31 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         error_timeout = 0
         
-        novos_dados = montar_novos_campos(compra, qtd_items, link, palavras_destacadas)
+        edital["QuantidadeItens"] = qtd_items
         
         itens_dados = montar_itens_campos(link, itens or [])
         edital["itens_dados"] = itens_dados
-        edital.update(novos_dados)
         
-        pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
-        edital["pasta_download"] = pasta_killer
-        edital["pasta_comprimidos"] = pasta_comprimidos
+        #pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
+        #edital["pasta_download"] = pasta_killer
+        #edital["pasta_comprimidos"] = pasta_comprimidos
         
         edital_print = {k: v for k, v in edital.items() if k != "itens_dados" and  k != "itens_validos"}
         print(f"\nProcessando: {edital_print}\n")
         
-        chats_enviados = []
+        chats_enviados = enviar_mensagem(edital, ids_usuarios)
 
-        if id_busca is not None:
-            chats_enviados = enviar_mensagem(edital, ids_usuarios)
+        complementar_edital(edital, cnpj, ano, numero, lista_erros_api)
 
         if id_busca is not None and id_processo_existente:
             registrar_notificacoes_busca(id_processo_existente, id_busca, destinatarios_filtro, chats_enviados)
             return edital, 0
 
-        elif id_busca is None:
-            enviar_mensagem(edital, ids_usuarios)
-            
-        arquivos = buscar_arquivos(cnpj, ano, numero, link)
-        if not arquivos:
-            logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
-        else:  
-            salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
+        #arquivos = buscar_arquivos(cnpj, ano, numero, link)
+        #if not arquivos:
+            #logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
+        #else:  
+            #salvar_arquivos_api(arquivos, edital, plataforma, cnpj, ano, numero)
         
         id_processo = gravar_novo_processo(edital, plataforma)
 
@@ -194,12 +197,4 @@ def tratar_timeout(edital, error_timeout, ids_usuarios):
     
     time.sleep(180)
     
-    return None, 0  
-
-
-def extrair_link(texto, urlBase):
-    id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
-    
-    return {
-        'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
-    }
+    return None, 0

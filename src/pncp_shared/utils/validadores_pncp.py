@@ -3,7 +3,6 @@ import string
 from unidecode import unidecode
 from pncp_shared.logs.controle_logs import logs
 
-
 def _listas_regra(regra):
     if isinstance(regra, dict):
         return regra.get("exceptions", []) or [], regra.get("valid", []) or []
@@ -49,7 +48,7 @@ def validar_perfil_valid(texto=None, itens=None, filtros_base=None):
     return bool(_encontrar_valids(textos, regras))
 
 def validar_modalidade_obras (texto):
-    modalidade = extrair_texto(texto, 'Modalidade da Contratação: ')
+    modalidade = extrair_texto(texto, 'Modalidade de Contratação: ')
     if modalidade not in ("Concorrência - Eletrônica", "Concorrência - Presencial", "Pregão - Eletrônico",
                             "Pregão - Presencial", "Dispensa", "Dispensa - Eletrônica"):
         return False
@@ -67,10 +66,12 @@ def validar_palavras(texto=None, itens=None, filtros_base=None):
         modo_itens = itens is not None and texto is None
 
         if texto is not None:
-            pos_objeto = texto.lower().find("objeto:")
-            if pos_objeto == -1:
+            match = re.search(r'(?im)^Objeto:\s*(.*)$', texto)
+
+            if not match:
                 return []
-            texto_original = texto[pos_objeto + len("objeto:"):].strip()
+            
+            texto_original = match.group(1).strip()
             text_list = [texto_original]
 
         elif itens is not None:

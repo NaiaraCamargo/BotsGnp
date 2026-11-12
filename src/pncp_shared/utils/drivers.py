@@ -260,6 +260,8 @@ def criar_driver(mostrar_browser=False):
     os.makedirs(download_dir, exist_ok=True)
 
     chrome_options = Options()
+    chrome_options.set_capability("goog:loggingPrefs", {"browser": "ALL", "performance": "ALL"})
+    chrome_options.add_experimental_option("perfLoggingPrefs", {"enableNetwork": True, "enablePage": False})
 
     chrome_portavel = localizar_chrome_portavel()
 
