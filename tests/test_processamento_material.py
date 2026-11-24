@@ -11,7 +11,7 @@ class ProcessamentoMaterialTest(unittest.TestCase):
         em_processamento = set()
 
         with patch.object(processamento_edital, "validar_palavras", return_value=[]), \
-             patch.object(processamento_edital, "extrair_link", return_value={"Link": link}), \
+             patch.object(processamento_edital, "extrair_dados_edital", return_value={"Link": link}), \
              patch.object(processamento_edital, "verificar_existencia_edital_new", return_value={"id": 10}), \
              patch.object(processamento_edital, "processar_edital") as processar, \
              patch.object(processamento_edital.logs, "error") as erro:

@@ -105,9 +105,8 @@ async def executar_job_async(job: dict, plataforma: str, filtros: dict, mostrar_
         format_data
     )
 
-async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
-                    data_final: str = "", format_data: str = "universal", min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 5,
-                    timeout_job_seg: int = 45 * 60, limpar_a_cada_seg: int = 10 * 60  ):
+async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "", data_final: str = "", format_data: str = "universal",
+                    min_interval: float = 0.5, idle_sleep: float = 0.2, intervalo_sucesso_seg: int = 0, timeout_job_seg: int = 45 * 60, limpar_a_cada_seg: int = 10 * 60):
     filtros = filtros or {}
     worker_id = f"{plataforma}-async-{uuid.uuid4().hex[:8]}"
 
@@ -193,8 +192,9 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
             if not rodar_infinito:
                 break
             
-            print(f"[{worker_id}] aguardando {intervalo_sucesso_seg}s antes do próximo job...")
-            await asyncio.sleep(intervalo_sucesso_seg)
+            if intervalo_sucesso_seg > 0:
+                print(f"[{worker_id}] aguardando {intervalo_sucesso_seg}s antes do próximo job...")
+                await asyncio.sleep(intervalo_sucesso_seg)
 
         except Exception:
             logs.exception(f"[{worker_id}] erro no loop principal; reiniciando em 10s...")
@@ -203,21 +203,8 @@ async def bot_async(plataforma: str, filtros: dict | None = None, mostrar_browse
 def bot(plataforma: str, filtros: dict | None = None, mostrar_browser: bool = False, rodar_infinito: bool = True, data_inicial: str = "",
         data_final: str = "", format_data: str = "universal"):
     try:
-        asyncio.run(
-            bot_async(
-                plataforma=plataforma,
-                filtros=filtros,
-                mostrar_browser=mostrar_browser,
-                rodar_infinito=rodar_infinito,
-                data_inicial=data_inicial,
-                data_final=data_final,
-                format_data=format_data,
-                min_interval=0.0,
-                idle_sleep=0.2,
-                intervalo_sucesso_seg=5,
-                timeout_job_seg=45 * 60
-            )
-        )
+        asyncio.run(bot_async(plataforma=plataforma, filtros=filtros, mostrar_browser=mostrar_browser, rodar_infinito=rodar_infinito,
+                              data_inicial=data_inicial, data_final=data_final, format_data=format_data, min_interval=0.0, idle_sleep=0.2, timeout_job_seg=45 * 60))
     except Exception as e:
         print(f"Erro fatal no bot: {e}")
         traceback.print_exc()

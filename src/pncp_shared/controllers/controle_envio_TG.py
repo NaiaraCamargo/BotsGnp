@@ -175,7 +175,7 @@ def formatar_mensagem(msg_dict, erro):
         # Links
         if "Link" in msg_dict:
             nova_msg += f"<b>Link:</b> {html.escape(str(msg_dict['Link']))}\n\n"
-        if "LinkBotao" in msg_dict:
+        if msg_dict.get("LinkBotao"):
             nova_msg += f"<b>LINK AUXILIAR:</b> {html.escape(str(msg_dict['LinkBotao']))}\n\n"
 
         # Coleta todos os índices únicos das chaves relevantes
@@ -220,10 +220,10 @@ def formatar_mensagem(msg_dict, erro):
             nova_msg += f"<b>DESCRIÇÃO:</b> {str(msg_dict['Descricao'])}\n\n"
 
         # Pasta download
-        if "pasta_download" in msg_dict:
-            nova_msg += f"<b>PASTA TMP DOWNLOAD:</b> <code>{html.escape(msg_dict['pasta_download'], quote=False)}</code>\n"
-        if "pasta_download" in msg_dict:
-            nova_msg += f"<b>PASTA COMPRIMIDOS:</b> <code>{html.escape(msg_dict['pasta_comprimidos'], quote=False)}</code>\n"
+        #if "pasta_download" in msg_dict:
+            #nova_msg += f"<b>PASTA TMP DOWNLOAD:</b> <code>{html.escape(msg_dict['pasta_download'], quote=False)}</code>\n"
+        #if "pasta_download" in msg_dict:
+           #nova_msg += f"<b>PASTA COMPRIMIDOS:</b> <code>{html.escape(msg_dict['pasta_comprimidos'], quote=False)}</code>\n"
             
         return html.unescape(nova_msg.strip())
 

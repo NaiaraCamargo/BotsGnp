@@ -3,7 +3,6 @@ import string
 from unidecode import unidecode
 from pncp_shared.logs.controle_logs import logs
 
-
 def _listas_regra(regra):
     if isinstance(regra, dict):
         return regra.get("exceptions", []) or [], regra.get("valid", []) or []
@@ -55,22 +54,24 @@ def validar_modalidade_obras (texto):
         return False
     else:
         return True
-    
+
 def validar_palavras(texto=None, itens=None, filtros_base=None):
-    try:   
+    try:
         encontradas = []
         palavras_chave_dict = filtros_base.get("banco", {}).get("palavraschave", {})
-        
+
         if not palavras_chave_dict:
             return []
-        
+
         modo_itens = itens is not None and texto is None
 
         if texto is not None:
-            pos_objeto = texto.lower().find("objeto:")
-            if pos_objeto == -1:
+            match = re.search(r'(?im)^Objeto:\s*(.*)$', texto)
+
+            if not match:
                 return []
-            texto_original = texto[pos_objeto + len("objeto:"):].strip()
+
+            texto_original = match.group(1).strip()
             text_list = [texto_original]
 
         elif itens is not None:
@@ -103,14 +104,14 @@ def validar_palavras(texto=None, itens=None, filtros_base=None):
 
                 if not re.search(padrao, texto_normalizado):
                     continue
-                
+
                 encontradas.append(chave_com_espacos)
-                
+
                 if modo_itens:
                     return encontradas
 
         return encontradas
-    
+
     except Exception as e:
         logs.error(f"Erro ao validar palavras-chave: {e}", exc_info=True)
         return []
@@ -137,11 +138,11 @@ def extrair_texto(texto, chave):
     except Exception as e:
         logs.error(f"Erro ao extrair texto para chave '{chave}': {e}", exc_info=True)
         return None
-    
+
 def validar_texto_seguro(texto, filtros_base):
     pos_objeto = texto.lower().find("objeto:")
     if pos_objeto == -1:
-        return [] 
+        return []
 
     texto_objeto = texto[pos_objeto + len("Objeto:"):].strip()
     texto_normalizado = unidecode(texto_objeto.lower())

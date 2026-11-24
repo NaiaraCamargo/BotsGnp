@@ -1,9 +1,8 @@
 from datetime import datetime
-from threading import Lock
-import time
 
 from pncp_shared.api.api_arquivos import buscar_arquivos, salvar_arquivos_api
-from pncp_shared.api.compras_pncp import tentar_buscar_compra
+from pncp_shared.api.compras_pncp import tentar_buscar_itens, adicionar_erro_url, complementar_edital
+from pncp_shared.utils.edital_texto import extrair_dados_edital, TextoEditalIncompleto
 from pncp_shared.utils.funcoespncp import obter_pastas_download
 from pncp_shared.logs.controle_logs import logs
 from pncp_shared.controllers.controle_envio_TG import enviar_mensagem
@@ -16,16 +15,8 @@ from pncp_shared.database.repositoriopncp import (
 from pncp_shared.utils.validadores_pncp import (
     validar_texto_seguro,
     extrair_chaves_do_link,
-    extrair_texto,
 )
-from pncp_bot_seguro.api.api_edital import (
-    montar_novos_campos, 
-    montar_itens_campos
-)
-
-INTERVALO_ALERTA_TIMEOUT_SEG = 180
-_lock_alertas_timeout = Lock()
-_ultimos_alertas_timeout = {}
+from pncp_shared.api.api_edital import montar_itens_campos
 
 def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtros_base, lock_editais, 
                     editais_em_processamento, error_timeout, lista_erros_api=None, id_busca=None):
@@ -36,7 +27,15 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
         print("NENHUMA PALAVRA CHAVE ENCONTRADA")
         return None, error_timeout
 
-    edital = extrair_link(texto, urlBase)
+    try:
+        edital = extrair_dados_edital(texto, palavras_destacadas=palavras_destacadas, incluir_homologado=True)
+    except TextoEditalIncompleto as erro:
+        adicionar_erro_url(lista_erros_api, urlBase, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=erro)
+        logs.error('Texto do edital incompleto: %s', erro)
+        return None, error_timeout
+    except Exception as erro:
+        logs.error('Erro ao consultar complementos do edital: %s', erro, exc_info=True)
+        return None, error_timeout
     link = edital.get("Link", "").strip()
 
     with lock_editais:
@@ -75,6 +74,9 @@ def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios,
             lista_erros_api, id_busca, id_processo_existente, destinatarios_filtro)
 
         return edital, error_timeout
+    except TextoEditalIncompleto as e:
+        adicionar_erro_url(lista_erros_api, link, tipo_erro='TEXTO_EDITAL_INCOMPLETO', mensagem=e, link_origem=link)
+        logs.error('Texto do edital incompleto: %s - %s', link, e)
     except Exception as e:
         logs.error(f"[ERRO AO PROCESSAR TEXTO] {link} - {e}")
     finally:
@@ -97,41 +99,33 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         cnpj, ano, numero = chaves
         
-        compra, qtd_items, itens, falhou_por_timeout  = tentar_buscar_compra(cnpj, ano, numero, link, lista_erros_api)
+        qtd_items, itens, _ = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
-        if compra is None:
-            if falhou_por_timeout:
-                return tratar_timeout(edital, error_timeout, ids_usuarios)
-            
+        if qtd_items is None:
             return None, error_timeout
 
         error_timeout = 0
         
-        novos_dados = montar_novos_campos(compra, qtd_items, link, palavras_destacadas)
+        edital["QuantidadeItens"] = qtd_items
         
         itens_dados = montar_itens_campos(link, itens or [])
         edital["itens_dados"] = itens_dados
-        edital.update(novos_dados)
         
-        pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
-        edital["pasta_download"] = pasta_killer
-        edital["pasta_comprimidos"] = pasta_comprimidos
+        #pasta_killer, pasta_comprimidos = obter_pastas_download(edital, plataforma)
+        #edital["pasta_download"] = pasta_killer
+        #edital["pasta_comprimidos"] = pasta_comprimidos
         
         edital_print = {k: v for k, v in edital.items() if k != "itens_dados" and  k != "itens_validos"}
         print(f"\nProcessando: {edital_print}\n")
         
-        chats_enviados = []
+        chats_enviados = enviar_mensagem(edital, ids_usuarios)
 
-        if id_busca is not None:
-            chats_enviados = enviar_mensagem(edital, ids_usuarios)
+        complementar_edital(edital, cnpj, ano, numero, lista_erros_api)
 
         if id_busca is not None and id_processo_existente:
             registrar_notificacoes_busca(id_processo_existente, id_busca, destinatarios_filtro, chats_enviados)
             return edital, 0
 
-        elif id_busca is None:
-            enviar_mensagem(edital, ids_usuarios)
-            
         #arquivos = buscar_arquivos(cnpj, ano, numero, link)
         #if not arquivos:
             #logs.info(f"[SEM ARQUIVOS API] {edital.get('Link')}")
@@ -148,58 +142,3 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
     except Exception as e:
         logs.error(f"[ERRO ao processar Edital:] {edital.get('Link', '').strip()} - {e}", exc_info=True)
         return None, error_timeout
-
-def obter_palavra_chave_timeout(edital):
-    palavras = edital.get("palavras_chave")
-
-    if isinstance(palavras, list):
-        palavras = ", ".join(str(p).strip() for p in palavras if str(p).strip())
-
-    palavras = str(palavras or "").strip()
-
-    return palavras or "sem_palavra_chave"
-
-
-def deve_enviar_alerta_timeout(palavra_chave, intervalo_seg=INTERVALO_ALERTA_TIMEOUT_SEG):
-    agora = time.monotonic()
-
-    with _lock_alertas_timeout:
-        ultimo_alerta = _ultimos_alertas_timeout.get(palavra_chave)
-
-        if ultimo_alerta and agora - ultimo_alerta < intervalo_seg:
-            return False, int(intervalo_seg - (agora - ultimo_alerta))
-
-        _ultimos_alertas_timeout[palavra_chave] = agora
-        return True, 0
-
-
-def tratar_timeout(edital, error_timeout, ids_usuarios):
-    """Gerencia erros de timeout e decide se continua ou pausa processamento."""
-    palavra_chave = obter_palavra_chave_timeout(edital)
-    enviar_alerta, segundos_restantes = deve_enviar_alerta_timeout(palavra_chave)
-   
-    print("\n" + "="*94)
-    print(f"ERRO NO SITE: TIMEOUT NA PALAVRA-CHAVE '{palavra_chave}'. AGUARDANDO 3 MINUTOS PARA TENTAR NOVAMENTE.")
-    print("\n" + "="*94 + "\n")
-
-    if enviar_alerta:
-        edital_alerta = dict(edital)
-        edital_alerta.update({"palavra_chave_timeout": palavra_chave, "tentativas_timeout": 3, "tempo_espera_minutos": 3})
-        enviar_mensagem(edital_alerta, ids_usuarios, erro=True)
-    else:
-        logs.warning(
-            f"[TIMEOUT] Alerta suprimido para palavra-chave '{palavra_chave}'. "
-            f"Novo alerta permitido em {segundos_restantes}s."
-        )
-    
-    time.sleep(180)
-    
-    return None, 0  
-
-
-def extrair_link(texto, urlBase):
-    id_aux = extrair_texto(texto, 'Id contratação PNCP: ')
-    
-    return {
-        'Link': f"{urlBase.split('?')[0]}/{id_aux.split('-')[0]}/{id_aux.split('/')[-1]}/{id_aux.split('-')[2].split('/')[0].lstrip('0')}"
-    }

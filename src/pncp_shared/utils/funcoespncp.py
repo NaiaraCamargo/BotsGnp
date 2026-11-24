@@ -126,6 +126,14 @@ def limpar_para_mysql(texto):
 
     return texto
 
+def destacar_palavras(texto, palavras):
+    palavras = sorted({palavra for palavra in (palavras or []) if palavra}, key=len, reverse=True)
+    if not texto or not palavras:
+        return texto
+    padrao = r'\b(?:' + '|'.join(re.escape(palavra) for palavra in palavras) + r')\b'
+    return re.sub(padrao, lambda match: f'<b>{match.group(0)}</b>', texto, flags=re.IGNORECASE)
+
+
 def obter_pastas_download(edital, plataforma):
     try:
         pasta_edital, _ , pasta_comprimidos = obter_caminho_edital(edital, plataforma)
@@ -186,15 +194,18 @@ def formatar_valor_sigilo(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def separar_data_hora(dt: str):
-    if not dt:
+    texto = formatar_data_hora_string(dt, incluir_segundos=False)
+    if not texto:
         return None, None
-    
-    d = datetime.fromisoformat(dt)
-    
-    data_formatada = d.strftime("%d/%m/%Y")
-    hora_formatada = d.strftime("%H:%M")
-    
-    return data_formatada, hora_formatada
+    tem_hora = ' ' in texto or 'T' in texto
+    try:
+        data = datetime.fromisoformat(texto)
+    except ValueError:
+        try:
+            data = datetime.strptime(texto, '%d/%m/%Y %H:%M' if tem_hora else '%d/%m/%Y')
+        except ValueError:
+            return None, None
+    return data.strftime('%d/%m/%Y'), data.strftime('%H:%M') if tem_hora else None
 
 def converter_moeda_brl_para_float(valor):
     try:
@@ -224,14 +235,22 @@ def limpar_arquivo(caminho):
         logs.error(f"Erro ao limpar arquivo: {e}", exc_info=True)
         
 
-def formatar_data_hora_string(data):
+def formatar_data_hora_string(data, incluir_segundos=True):
     if not data:
         return ""
-
-    try:
-        return datetime.strptime(data, "%Y-%m-%dT%H:%M:%S").strftime("%d/%m/%Y %H:%M:%S")
-    except ValueError:
-        return data
+    texto = str(data).strip()
+    if remover_acentos(texto).lower() in {'', 'nao informado', 'nao informada', 'nao se aplica', '-'}:
+        return ''
+    formatos = ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M', '%Y-%m-%d', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y')
+    for formato in formatos:
+        try:
+            data_convertida = datetime.strptime(texto, formato)
+        except ValueError:
+            continue
+        if formato in {'%d/%m/%Y', '%Y-%m-%d'}:
+            return data_convertida.strftime('%d/%m/%Y')
+        return data_convertida.strftime('%d/%m/%Y %H:%M:%S' if incluir_segundos else '%d/%m/%Y %H:%M')
+    return data
     
 def separar_data_hora_formatada(data_hora):
     if not data_hora:

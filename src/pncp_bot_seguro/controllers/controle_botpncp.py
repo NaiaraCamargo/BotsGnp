@@ -92,8 +92,7 @@ def bot(plataforma: str, url: str = '', filtros: dict = {}, mostrar_browser: boo
             if not rodar_infinito:
                 break
 
-            print("Ciclo do Seguro concluído. Aguardando 5 segundos para iniciar novamente.")
-            time.sleep(5)
+            print("Ciclo do Seguro concluído. Iniciando novamente.")
 
         except Exception as e:
             logs.exception("Erro no bot principal. Reiniciando em 10 segundos...")

@@ -34,6 +34,7 @@ docs/*
 !docs/migracao_canais_e_historico_bots.sql
 !docs/completar_migracao_canais_parcial.sql
 !docs/ativar_bot_edit.sql
+!docs/pncp_texto_selenium.md
 
 # Arquivos Excel na raiz
 *.xlsx
