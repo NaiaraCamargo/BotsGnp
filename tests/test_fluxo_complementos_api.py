@@ -136,6 +136,21 @@ class FluxoComplementosApiTest(unittest.TestCase):
                 complementar.assert_not_called()
                 gravar.assert_not_called()
 
+    def test_falha_nos_itens_nao_envia_alerta_nem_pausa_processamento(self):
+        for modulo in (obra, seguro, material):
+            with self.subTest(bot=modulo.__name__), ExitStack() as stack:
+                stack.enter_context(patch.object(modulo, 'tentar_buscar_itens', return_value=(None, [], True)))
+                enviar = stack.enter_context(patch.object(modulo, 'enviar_mensagem'))
+                gravar = stack.enter_context(patch.object(modulo, 'gravar_novo_processo'))
+                dormir = stack.enter_context(patch('time.sleep'))
+                argumentos = ({'GNP'}, []) if modulo is obra else ()
+                resultado = modulo.processar_edital({'Link': 'https://pncp.gov.br/app/editais/35250517000113/2026/11'}, [], 0,
+                                                    ['Reforma'], {}, 'teste', [], *argumentos)
+                self.assertEqual(resultado, (None, 0))
+                enviar.assert_not_called()
+                gravar.assert_not_called()
+                dormir.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

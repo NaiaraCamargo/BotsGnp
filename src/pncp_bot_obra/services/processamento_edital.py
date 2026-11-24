@@ -1,5 +1,4 @@
 from datetime import datetime
-import time
 
 from pncp_shared.api.api_edital import montar_itens_campos
 from pncp_shared.api.compras_pncp import tentar_buscar_itens, adicionar_erro_url, complementar_edital
@@ -183,12 +182,9 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         cnpj, ano, numero = chaves
         
-        qtd_items, itens, falhou_por_timeout = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
+        qtd_items, itens, _ = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
         if qtd_items is None:
-            if falhou_por_timeout:
-                return tratar_timeout(edital, error_timeout, destinos_pagina, destinatarios, tentativas=3)
-            
             return None, error_timeout
 
         error_timeout = 0
@@ -249,24 +245,3 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
     except Exception as e:
         logs.error(f"[ERRO ao processar Edital:] {edital.get('Link', '').strip()} - {e}", exc_info=True)
         return None, error_timeout
-    
-def tratar_timeout(edital, error_timeout, destinos, destinatarios, tentativas=3):
-    """Gerencia erros de timeout e decide se continua ou pausa processamento."""
-
-    link = str(edital.get("Link") or "").strip()
-    edital_alerta = dict(edital)
-    edital_alerta.update({"tentativas_timeout": tentativas, "tempo_espera_minutos": 3})
-
-    print("\n" + "="*94)
-    print(f"ERRO NO SITE: LINK {link} FALHOU {tentativas} VEZES. AGUARDANDO 3 MINUTOS PARA NOVA TENTATIVA.")
-    print("\n" + "="*94 + "\n")
-
-    for destino in sorted(normalizar_destinos(destinos)):
-        chats_destino = destinatarios_por_destino(destinatarios, destino)
-        if chats_destino:
-            enviar_mensagem(edital_alerta, chats_destino, erro=True, destino=destino)
-
-    time.sleep(180)
-    
-    return None, 0  
-

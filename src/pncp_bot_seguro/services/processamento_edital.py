@@ -1,6 +1,4 @@
 from datetime import datetime
-from threading import Lock
-import time
 
 from pncp_shared.api.api_arquivos import buscar_arquivos, salvar_arquivos_api
 from pncp_shared.api.compras_pncp import tentar_buscar_itens, adicionar_erro_url, complementar_edital
@@ -19,10 +17,6 @@ from pncp_shared.utils.validadores_pncp import (
     extrair_chaves_do_link,
 )
 from pncp_shared.api.api_edital import montar_itens_campos
-
-INTERVALO_ALERTA_TIMEOUT_SEG = 180
-_lock_alertas_timeout = Lock()
-_ultimos_alertas_timeout = {}
 
 def processar_texto(texto, plataforma, driver, urlBase, id_pagina, ids_usuarios, hora_atual, processar_dia, filtros_base, lock_editais, 
                     editais_em_processamento, error_timeout, lista_erros_api=None, id_busca=None):
@@ -105,12 +99,9 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
 
         cnpj, ano, numero = chaves
         
-        qtd_items, itens, falhou_por_timeout = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
+        qtd_items, itens, _ = tentar_buscar_itens(cnpj, ano, numero, link, lista_erros_api, max_tentativas=3)
 
         if qtd_items is None:
-            if falhou_por_timeout:
-                return tratar_timeout(edital, error_timeout, ids_usuarios)
-            
             return None, error_timeout
 
         error_timeout = 0
@@ -151,50 +142,3 @@ def processar_edital(edital, ids_usuarios, error_timeout, palavras_destacadas, f
     except Exception as e:
         logs.error(f"[ERRO ao processar Edital:] {edital.get('Link', '').strip()} - {e}", exc_info=True)
         return None, error_timeout
-
-def obter_palavra_chave_timeout(edital):
-    palavras = edital.get("palavras_chave")
-
-    if isinstance(palavras, list):
-        palavras = ", ".join(str(p).strip() for p in palavras if str(p).strip())
-
-    palavras = str(palavras or "").strip()
-
-    return palavras or "sem_palavra_chave"
-
-
-def deve_enviar_alerta_timeout(palavra_chave, intervalo_seg=INTERVALO_ALERTA_TIMEOUT_SEG):
-    agora = time.monotonic()
-
-    with _lock_alertas_timeout:
-        ultimo_alerta = _ultimos_alertas_timeout.get(palavra_chave)
-
-        if ultimo_alerta and agora - ultimo_alerta < intervalo_seg:
-            return False, int(intervalo_seg - (agora - ultimo_alerta))
-
-        _ultimos_alertas_timeout[palavra_chave] = agora
-        return True, 0
-
-
-def tratar_timeout(edital, error_timeout, ids_usuarios):
-    """Gerencia erros de timeout e decide se continua ou pausa processamento."""
-    palavra_chave = obter_palavra_chave_timeout(edital)
-    enviar_alerta, segundos_restantes = deve_enviar_alerta_timeout(palavra_chave)
-   
-    print("\n" + "="*94)
-    print(f"ERRO NO SITE: TIMEOUT NA PALAVRA-CHAVE '{palavra_chave}'. AGUARDANDO 3 MINUTOS PARA TENTAR NOVAMENTE.")
-    print("\n" + "="*94 + "\n")
-
-    if enviar_alerta:
-        edital_alerta = dict(edital)
-        edital_alerta.update({"palavra_chave_timeout": palavra_chave, "tentativas_timeout": 3, "tempo_espera_minutos": 3})
-        enviar_mensagem(edital_alerta, ids_usuarios, erro=True)
-    else:
-        logs.warning(
-            f"[TIMEOUT] Alerta suprimido para palavra-chave '{palavra_chave}'. "
-            f"Novo alerta permitido em {segundos_restantes}s."
-        )
-    
-    time.sleep(180)
-    
-    return None, 0

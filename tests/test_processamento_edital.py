@@ -39,23 +39,5 @@ class ProcessarEditalTest(unittest.TestCase):
         buscar_arquivos.assert_called_once()
         gravar_novo_processo.assert_called_once()
 
-    def test_tratar_timeout_envia_com_token_de_cada_destino_e_aguarda_tres_minutos(self):
-        edital = {"Link": "https://pncp.gov.br/app/editais/123/2026/1"}
-        destinatarios = [{"id_telegram": "canal-bool", "codigo_destino": "BOOL"},
-                         {"id_telegram": "canal-edit", "codigo_destino": "EDIT"}]
-
-        with patch.object(processamento_edital, "enviar_mensagem") as enviar, patch.object(processamento_edital.time, "sleep") as sleep:
-            resultado = processamento_edital.tratar_timeout(edital, 0, {"BOOL", "EDIT"}, destinatarios)
-
-        self.assertEqual(resultado, (None, 0))
-        self.assertEqual(enviar.call_count, 2)
-        self.assertEqual(enviar.call_args_list[0].kwargs, {"erro": True, "destino": "BOOL"})
-        self.assertEqual(enviar.call_args_list[0].args[1], ["canal-bool"])
-        self.assertEqual(enviar.call_args_list[1].kwargs, {"erro": True, "destino": "EDIT"})
-        self.assertEqual(enviar.call_args_list[1].args[1], ["canal-edit"])
-        self.assertEqual(enviar.call_args_list[1].args[0]["tentativas_timeout"], 3)
-        sleep.assert_called_once_with(180)
-
-
 if __name__ == "__main__":
     unittest.main()
