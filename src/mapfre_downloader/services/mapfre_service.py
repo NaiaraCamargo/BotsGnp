@@ -28,6 +28,8 @@ def processar_login_mafre(driver_mapfre):
             botao_login = WebDriverWait(driver_mapfre, 20).until(EC.element_to_be_clickable((By.ID, "btnLogin")))
             botao_login.click()
             
+            driver_mapfre.get(configuracoes.get("mafre", {}).get("url_pos_login"))
+
             try:
                 WebDriverWait(driver_mapfre, 40).until(EC.presence_of_element_located((By.ID, "btnConfirmaTermos")))
                 print("✅ Login bem-sucedido")

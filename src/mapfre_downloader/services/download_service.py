@@ -42,7 +42,7 @@ def mensagem_resumida_erro(excecao, mensagem_padrao="Falha ao abrir ou baixar ar
             return "Janela do arquivo foi fechada antes do download"
         if "target frame detached" in mensagem_lower or "cannot determine loading status" in mensagem_lower:
             return "Carregamento da aba do arquivo foi interrompido"
-        if "failed to establish a new connection" in mensagem_lower or "max retries exceeded" in mensagem_lower:
+        if any(erro in mensagem_lower for erro in ("failed to establish a new connection", "max retries exceeded", "connectionreseterror", "connection reset", "connection aborted", "10054")):
             return "Sessao do navegador foi encerrada"
         if "invalid session id" in mensagem_lower:
             return "Sessao do navegador ficou invalida"
@@ -77,6 +77,10 @@ def erro_transitorio_de_janela_ou_sessao(excecao):
             or "failed to establish a new connection" in mensagem
             or "max retries exceeded" in mensagem
             or "connection refused" in mensagem
+            or "connectionreseterror" in mensagem
+            or "connection reset" in mensagem
+            or "connection aborted" in mensagem
+            or "10054" in mensagem
         )
     except Exception:
         return False
@@ -625,12 +629,16 @@ def extrair_arquivos_grd_docs(driver_mapfre, pagina_grid=1):
                 })
                 
             except Exception as ex_linha:
+                if erro_transitorio_de_janela_ou_sessao(ex_linha):
+                    raise
                 logs.error(f"\nERRO ao extrair linha {indice} da grid: {ex_linha}")
                 continue
 
         return arquivos
     except Exception as ex:
         logs.error(f"\nERRO ao extrair arquivos da grid: {ex}")
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         return []
 
 
@@ -663,6 +671,8 @@ def extrair_paginas_grd_docs(driver_mapfre):
         return sorted(paginas)
     except Exception as ex:
         logs.error(f"\nERRO ao extrair paginacao da grid: {ex}")
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         return []
 
 
@@ -683,18 +693,24 @@ def obter_assinatura_grd_docs(driver_mapfre):
                 href = colunas[7].find_element(By.TAG_NAME, "a").get_attribute("href") or ""
 
                 assinatura.append(f"{numero}|{subtipo}|{data_inclusao}|{href}")
-            except Exception:
+            except Exception as ex:
+                if erro_transitorio_de_janela_ou_sessao(ex):
+                    raise
                 continue
 
         return "||".join(assinatura)
-    except Exception:
+    except Exception as ex:
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         return ""
 
 
 def obter_html_grd_docs(driver_mapfre):
     try:
         return driver_mapfre.find_element(By.ID, "grdDocs").get_attribute("innerHTML") or ""
-    except Exception:
+    except Exception as ex:
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         return ""
 
 
@@ -724,12 +740,16 @@ def ir_para_pagina_grd_docs(driver_mapfre, pagina_destino):
                 if assinatura_nova and assinatura_nova != assinatura_anterior:
                     return True
             except Exception as ex_tentativa:
+                if erro_transitorio_de_janela_ou_sessao(ex_tentativa):
+                    raise
                 logs.error(f"\nERRO ao ir para pagina {pagina_destino} da grid tentativa={tentativa}: {mensagem_resumida_erro(ex_tentativa)}")
                 time.sleep(1.0)
 
         logs.error(f"\nERRO ao navegar para pagina {pagina_destino} da grid.")
         return False
     except Exception as ex:
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         logs.error(f"\nERRO ao preparar navegacao da pagina {pagina_destino} da grid: {mensagem_resumida_erro(ex)}")
         return False
 
@@ -780,6 +800,8 @@ def extrair_todos_arquivos_grd_docs(driver_mapfre):
         return arquivos
     except Exception as ex:
         logs.error(f"\nERRO ao extrair todos os arquivos da grid: {ex}")
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            raise
         return []
 
      
@@ -802,13 +824,13 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         
         orgao_campo = WebDriverWait(driver_mapfre, 20).until(EC.presence_of_element_located((By.NAME, "cliente")))
         orgao = orgao_campo.get_attribute("value")
-        pasta_reserva = obter_pasta_reserva(reserva, id_reserva, orgao)
         
         if not arquivos_grid:
             msg = "\nNenhum arquivo encontrado na grid grdDocs"
             logs.info(msg)
             return 0, 0, orgao, url_arquivo, True, msg
 
+        pasta_reserva = obter_pasta_reserva(reserva, id_reserva, orgao)
         arquivos_baixados = carregar_arquivos_do_zip_existente(pasta_reserva, id_reserva, orgao)
         erros_download = []
         aba_principal = driver_mapfre.current_window_handle
@@ -892,6 +914,10 @@ def processar_reserva_arquivos(driver_mapfre, reserva):
         return quantidade_arquivos, quantidade_baixado, orgao, url_arquivo, True, ""
     
     except Exception as ex:
+        if erro_transitorio_de_janela_ou_sessao(ex):
+            msg = f"ERRO - Ao processar a url dos arquivos: {mensagem_resumida_erro(ex)}"
+            logs.error(msg)
+            return 0, 0, "", "", False, msg
         mensagem_erro = str(ex).strip()
         if mensagem_erro == 'Message:':
             msg = "Não deu Link"

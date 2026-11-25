@@ -5,6 +5,7 @@
     "tempo_de_login": 300,
     "tempo_recarregar_config": 900,
     "salvar_planilha_a_cada": 10,
+    "links_simultaneos": 3,
     "caminho_bkp": "C:/BOTGNP/bkp",
     "dias_intervalo_bkp": 2,
     "mysqldump_path": "C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe",
@@ -49,6 +50,7 @@
     ],
     "mafre":{
         "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_pos_login": "https://negociospublicos.mapfre.com.br/mapfreLicitacoes.aspx",
         "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=0000&p=consultaGeral.aspx",
         "user": "BRASILGNP",
         "password": "ype769#",
