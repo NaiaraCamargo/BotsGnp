@@ -6,13 +6,14 @@ from threading import Lock
 from pncp_shared.utils.funcoespncp import limpar_console
 from pncp_shared.logs.controle_logs import controle_logs, logs
 from pncp_shared.config.controle_config import carregar_configuracoes, config, configuracoes
-from mapfre_downloader.services.excel_service import ler_links_excel, atualizar_planilha, fechar_planilha
+from mapfre_downloader.services.excel_service import ler_links_excel, atualizar_planilha, fechar_planilha, salvar_alteracoes_planilha
 from mapfre_downloader.services.mapfre_service import processar_login_mafre
 from pncp_shared.utils.drivers import criar_driver, finalizar_driver
 from mapfre_downloader.services.download_service import processar_reserva_arquivos
 
 
 _lock_driver = Lock()
+_INTERVALO_RECONEXAO = 30
 _ERROS_TRANSITORIOS = ("janela do arquivo foi fechada antes do download", "carregamento da aba do arquivo foi interrompido",
                        "sessao do navegador foi encerrada", "sessao do navegador ficou invalida", "conexao com o navegador foi recusada")
 
@@ -75,6 +76,30 @@ def _renovar_login_compartilhado(sessoes):
     return cookies
 
 
+def _aguardar_login_compartilhado(sessoes):
+    tentativas = 0
+    while True:
+        try:
+            cookies = _renovar_login_compartilhado(sessoes)
+        except Exception as ex:
+            tentativas += 1
+            for sessao in sessoes:
+                sessao.fechar()
+            if tentativas == 1:
+                salvar_alteracoes_planilha(forcar=True)
+            motivo = " ".join(str(ex).split("Stacktrace:", 1)[0].split())
+            mensagem = f"Falha ao preparar login Mapfre (tentativa {tentativas}): {motivo}. Bot ativo, fila preservada. Nova tentativa em {_INTERVALO_RECONEXAO}s."
+            logs.warning(mensagem)
+            print(mensagem)
+            time.sleep(_INTERVALO_RECONEXAO)
+            continue
+        if tentativas:
+            mensagem = "Conexao Mapfre restabelecida. Retomando o processamento da fila."
+            logs.info(mensagem)
+            print(mensagem)
+        return cookies
+
+
 def _chave_reserva(reserva):
     return str(reserva.get("reserva", "")).strip().replace(".0", "")
 
@@ -106,7 +131,7 @@ def executar_bot_mapfre():
             return
 
         sessoes = [_SessaoMapfre(numero) for numero in range(1, min(quantidade_sessoes, len(reservas)) + 1)]
-        cookies_login = _renovar_login_compartilhado(sessoes)
+        cookies_login = _aguardar_login_compartilhado(sessoes)
         instante_ultimo_login = time.monotonic()
         sessoes_livres = list(sessoes)
         fila = deque(enumerate(reservas, start=1))
@@ -131,7 +156,7 @@ def executar_bot_mapfre():
                 tempo_login = float(configuracoes.get("tempo_de_login", 300))
                 renovar_login = bool(fila) and time.monotonic() - instante_ultimo_login >= tempo_login
                 if renovar_login and not futuros:
-                    cookies_login = _renovar_login_compartilhado(sessoes)
+                    cookies_login = _aguardar_login_compartilhado(sessoes)
                     instante_ultimo_login = time.monotonic()
                     renovar_login = False
 

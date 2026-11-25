@@ -50,6 +50,7 @@
     ],
     "mafre":{
         "url_login": "https://negociospublicos.mapfre.com.br/Default.aspx",
+        "url_pos_login": "https://negociospublicos.mapfre.com.br/mapfreLicitacoes.aspx",
         "url_arquivo_digital": "https://negociospublicos.mapfre.com.br/cadArquivoDigital.aspx?id=0000&p=consultaGeral.aspx",
         "user": "BRASILGNP",
         "password": "ype769#",

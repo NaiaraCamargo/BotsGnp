@@ -3,10 +3,50 @@ from contextlib import ExitStack
 from threading import Barrier, Lock, get_ident
 from unittest.mock import Mock, patch
 
+from selenium.common.exceptions import WebDriverException
+from urllib3.exceptions import ProtocolError
+
 from mapfre_downloader.controllers import controle_mapfre as controle
+from mapfre_downloader.services import download_service as download
 
 
 class ControleMapfreTest(unittest.TestCase):
+    def test_reset_de_conexao_na_paginacao_nao_retorna_lista_vazia(self):
+        erro = ProtocolError("Connection aborted.", ConnectionResetError(10054, "Conexao encerrada"))
+        driver = Mock()
+        driver.find_elements.side_effect = erro
+        with patch.object(download, "logs"):
+            with self.assertRaises(ProtocolError):
+                download.extrair_paginas_grd_docs(driver)
+        self.assertTrue(download.erro_transitorio_de_janela_ou_sessao(erro))
+        self.assertEqual(download.mensagem_resumida_erro(erro), "Sessao do navegador foi encerrada")
+
+    def test_grid_sem_paginacao_continua_retornando_lista_vazia(self):
+        driver = Mock()
+        driver.find_elements.return_value = []
+        self.assertEqual(download.extrair_paginas_grd_docs(driver), [])
+
+    def test_reset_na_grid_recria_navegador_e_repete_reserva(self):
+        erro = ProtocolError("Connection aborted.", ConnectionResetError(10054, "Conexao encerrada"))
+        sessao = controle._SessaoMapfre(1)
+        driver_antigo = Mock(current_url="mapfre", window_handles=["1"])
+        driver_novo = Mock(current_url="mapfre", window_handles=["2"])
+        sessao.driver, sessao.profile_dir = driver_antigo, "perfil-antigo"
+        cookies = ({"name": "autenticacao", "value": "login-atual"},)
+        config = {"mafre": {"url_arquivo_digital": "https://teste/cadArquivoDigital.aspx?id=0"}}
+        with patch.dict(download.configuracoes, config, clear=True), patch.object(download, "WebDriverWait"), patch.object(download, "logs"), \
+             patch.object(download, "extrair_arquivos_grd_docs", return_value=[]), patch.object(download, "extrair_paginas_grd_docs", side_effect=erro):
+            falha = download.processar_reserva_arquivos(driver_antigo, {"reserva": "1"})
+        self.assertFalse(falha[4])
+        self.assertIn("Sessao do navegador foi encerrada", falha[5])
+        sucesso = (1, 1, "orgao", "link", True, "OK")
+        with patch.object(controle, "setup_driver_mapfre", return_value=(driver_novo, "perfil-novo")) as setup, \
+             patch.object(controle, "finalizar_driver"), patch.object(controle, "print", create=True), \
+             patch.object(controle, "processar_reserva_arquivos", side_effect=[falha, sucesso]) as processar:
+            self.assertEqual(sessao.processar(1, 1, {"reserva": "1"}, cookies), sucesso)
+        setup.assert_called_once_with(cookies=cookies)
+        self.assertEqual([chamada.args[0] for chamada in processar.call_args_list], [driver_antigo, driver_novo])
+
     def executar_com_reservas(self, reservas, processar, quantidade=3, gravar=None, ciclos=1, logar=None):
         config = {"caminho_excel": "teste.xlsx", "links_simultaneos": quantidade, "tempo_de_login": 300, "tempo_recarregar_config": 900}
         drivers = [Mock(current_url="mapfre", window_handles=[str(numero)]) for numero in range(quantidade * ciclos)]
@@ -209,6 +249,81 @@ class ControleMapfreTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Login Mapfre"):
                 controle.setup_driver_mapfre()
         finalizar.assert_called_once_with(driver, "perfil", contexto="login Mapfre")
+
+    def test_falhas_consecutivas_no_login_retentam_ate_recuperar(self):
+        sessoes = [Mock() for _ in range(3)]
+        cookies = ({"name": "autenticacao", "value": "login-recuperado"},)
+        falha = WebDriverException("unknown error: net::ERR_CONNECTION_TIMED_OUT\nStacktrace: detalhes do Chrome")
+        with patch.object(controle, "_renovar_login_compartilhado", side_effect=[falha, falha, falha, cookies]) as renovar, \
+             patch.object(controle, "salvar_alteracoes_planilha") as salvar, patch.object(controle.time, "sleep") as esperar, \
+             patch.object(controle, "print", create=True), patch.object(controle, "logs") as logs:
+            self.assertEqual(controle._aguardar_login_compartilhado(sessoes), cookies)
+        self.assertEqual(renovar.call_count, 4)
+        self.assertEqual([chamada.args[0] for chamada in esperar.call_args_list], [30, 30, 30])
+        salvar.assert_called_once_with(forcar=True)
+        for sessao in sessoes:
+            self.assertEqual(sessao.fechar.call_count, 3)
+        self.assertEqual(logs.warning.call_count, 3)
+        self.assertIn("ERR_CONNECTION_TIMED_OUT", logs.warning.call_args.args[0])
+        self.assertNotIn("Stacktrace", logs.warning.call_args.args[0])
+        self.assertIn("Retomando", logs.info.call_args.args[0])
+
+    def test_timeout_na_renovacao_preserva_a_fila_e_nao_repete_reservas_concluidas(self):
+        relogio = [0]
+        processadas = []
+        tentativas = 0
+        renovar_original = controle._renovar_login_compartilhado
+
+        def renovar(sessoes):
+            nonlocal tentativas
+            tentativas += 1
+            if tentativas == 2:
+                raise WebDriverException("unknown error: net::ERR_CONNECTION_TIMED_OUT")
+            return renovar_original(sessoes)
+
+        def processar(driver, reserva):
+            processadas.append(reserva["reserva"])
+            return 0, 0, "", "", True, "OK"
+
+        def gravar(*args, **kwargs):
+            relogio[0] = 301
+
+        with patch.object(controle.time, "monotonic", side_effect=lambda: relogio[0]), patch.object(controle.time, "sleep") as esperar, \
+             patch.object(controle, "_renovar_login_compartilhado", side_effect=renovar), patch.object(controle, "salvar_alteracoes_planilha") as salvar:
+            atualizar, login, _, fechar = self.executar_com_reservas([{"reserva": str(i)} for i in range(1, 4)], processar, quantidade=1, gravar=gravar, ciclos=2)
+        self.assertEqual(processadas, ["1", "2", "3"])
+        self.assertEqual(atualizar.call_count, 3)
+        self.assertTrue(all(chamada.args[6] for chamada in atualizar.call_args_list))
+        self.assertEqual(login.call_count, 2)
+        self.assertEqual(tentativas, 3)
+        esperar.assert_called_once_with(30)
+        salvar.assert_called_once_with(forcar=True)
+        fechar.assert_called_once()
+
+    def test_timeout_no_login_inicial_recupera_antes_de_processar_reservas(self):
+        tentativas = 0
+
+        def logar(driver):
+            nonlocal tentativas
+            tentativas += 1
+            if tentativas == 1:
+                raise WebDriverException("unknown error: net::ERR_CONNECTION_TIMED_OUT")
+            return True
+
+        with patch.object(controle.time, "sleep") as esperar, patch.object(controle, "salvar_alteracoes_planilha") as salvar:
+            atualizar, login, finalizar, _ = self.executar_com_reservas([{"reserva": "1"}], lambda *args: (0, 0, "", "", True, "OK"), quantidade=1, ciclos=2, logar=logar)
+        self.assertEqual(login.call_count, 2)
+        atualizar.assert_called_once()
+        self.assertTrue(atualizar.call_args.args[6])
+        self.assertEqual(sum(chamada.args[0] is not None for chamada in finalizar.call_args_list), 2)
+        esperar.assert_called_once_with(30)
+        salvar.assert_called_once_with(forcar=True)
+
+    def test_interrupcao_manual_nao_e_tratada_como_falha_de_login(self):
+        with patch.object(controle, "_renovar_login_compartilhado", side_effect=KeyboardInterrupt), patch.object(controle.time, "sleep") as esperar:
+            with self.assertRaises(KeyboardInterrupt):
+                controle._aguardar_login_compartilhado([Mock()])
+        esperar.assert_not_called()
 
 
 if __name__ == "__main__":
